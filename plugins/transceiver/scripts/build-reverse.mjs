@@ -41,11 +41,22 @@ replaceOnce(
   "build-info path",
 );
 
-// Supported platforms use the emitted prebuilds. Remove ncc's machine-local fallback.
+// Supported platforms use the emitted prebuilds. Remove ncc's machine-local fallback
+// and normalize its host-dependent module ID so macOS and Linux builds are identical.
+const fallbackModuleKey = JSON.stringify("transceiver-better-sqlite3-fallback");
+let fallbackModuleId;
 replaceOnce(
   /(\d+):module=>\{module\.exports=eval\("require"\)\("[^"]*better_sqlite3\.node"\)\}/,
-  (_, moduleId) => `${moduleId}:()=>{throw new Error("No bundled better-sqlite3 prebuild for "+process.platform+"-"+process.arch+".")}`,
+  (_, moduleId) => {
+    fallbackModuleId = moduleId;
+    return `${fallbackModuleKey}:()=>{throw new Error("No bundled better-sqlite3 prebuild for "+process.platform+"-"+process.arch+".")}`;
+  },
   "better-sqlite3 fallback",
+);
+replaceOnce(
+  new RegExp(`__nccwpck_require__\\(${fallbackModuleId}\\)`),
+  `__nccwpck_require__(${fallbackModuleKey})`,
+  "better-sqlite3 fallback reference",
 );
 
 await fs.writeFile(bundlePath, bundle);
