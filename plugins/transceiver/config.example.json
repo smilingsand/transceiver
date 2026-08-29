@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "unknownProject": "ask",
+  "projects": {
+    "/absolute/path/to/included-project": {
+      "name": "included-project",
+      "sync": true,
+      "allowCodexTasks": true,
+      "chatgptUrl": "https://chatgpt.com/c/example"
+    },
+    "/absolute/path/to/excluded-project": {
+      "name": "excluded-project",
+      "sync": false,
+      "allowCodexTasks": false,
+      "chatgptUrl": null
+    }
+  }
+}

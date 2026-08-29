@@ -3,6 +3,12 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Local Transceiver request artifacts
+.transceiver/
+
+# Node development dependencies; the self-contained reverse bridge is committed.
+node_modules/
+
 # C extensions
 *.so
 
@@ -11,6 +17,8 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+!plugins/transceiver/dist/
+!plugins/transceiver/dist/**
 downloads/
 eggs/
 .eggs/
@@ -216,3 +224,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# macOS Garbage
+.DS_Store

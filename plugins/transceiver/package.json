@@ -1,0 +1,21 @@
+{
+  "name": "transceiver-codex-plugin",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build:reverse": "node scripts/build-reverse.mjs",
+    "reverse:start": "node dist/reverse-bridge/index.mjs",
+    "reverse:doctor": "node dist/reverse-bridge/index.mjs --doctor",
+    "test": "npm run build:reverse && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "codex-mcp-bridge-for-chatgpt": "https://github.com/menaje/codex-mcp-bridge-for-chatgpt/releases/download/v0.3.0/codex-mcp-bridge-for-chatgpt-0.3.0.tgz"
+  },
+  "devDependencies": {
+    "@vercel/ncc": "^0.45.0"
+  }
+}

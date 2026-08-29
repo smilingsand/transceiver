@@ -1,0 +1,42 @@
+{
+  "name": "transceiver",
+  "version": "0.2.0+codex.20260829100533",
+  "description": "Synchronize selected Codex projects with ChatGPT Web through a bidirectional, provenance-preserving bridge.",
+  "author": {
+    "name": "Mark9804",
+    "url": "https://github.com/mark9804"
+  },
+  "homepage": "https://github.com/mark9804/transceiver",
+  "repository": "https://github.com/mark9804/transceiver",
+  "license": "AGPL-3.0-only",
+  "keywords": [
+    "codex",
+    "chatgpt",
+    "project-sync",
+    "agent-handoff",
+    "mcp",
+    "codex-app-server"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Transceiver",
+    "shortDescription": "Bidirectional Codex and ChatGPT project sync",
+    "longDescription": "Transceiver sends bounded Codex project handoffs to mapped ChatGPT conversations and bundles a private reverse MCP bridge backed by Codex App Server. Per-project policy controls both directions, and every handoff carries visible agent provenance.",
+    "developerName": "Mark9804",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write",
+      "Lifecycle hooks",
+      "MCP server"
+    ],
+    "websiteURL": "https://github.com/mark9804/transceiver",
+    "defaultPrompt": [
+      "Sync this project's current progress to ChatGPT Web.",
+      "Report this blocker to the mapped ChatGPT conversation.",
+      "Let ChatGPT delegate a read-only task back to Codex."
+    ],
+    "brandColor": "#10A37F"
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Transceiver"
+  short_description: "Bidirectional Codex and ChatGPT project sync"
+  default_prompt: "Use $transceiver to synchronize this project with ChatGPT Web."

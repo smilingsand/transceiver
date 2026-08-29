@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Transceiver 当前双向架构",
+    "locale": "zh-CN",
+    "output": "transceiver-architecture.html",
+    "quality_profile": "showcase",
+    "viewBox": [1380, 780]
+  },
+  "components": [
+    {
+      "id": "codex",
+      "type": "external",
+      "label": "Codex Desktop / CLI",
+      "sublabel": "本地工程执行入口",
+      "pos": [60, 120],
+      "size": [180, 72]
+    },
+    {
+      "id": "plugin",
+      "type": "backend",
+      "label": "Transceiver Plugin",
+      "sublabel": "Skill · SessionStart Hook · CLI",
+      "tag": "policy + handoff",
+      "pos": [320, 116],
+      "size": [210, 82]
+    },
+    {
+      "id": "browserTransport",
+      "type": "frontend",
+      "label": "Chrome Browser Control",
+      "sublabel": "已登录 ChatGPT Web 传输",
+      "pos": [610, 120],
+      "size": [190, 72]
+    },
+    {
+      "id": "chatgptWeb",
+      "type": "cloud",
+      "label": "ChatGPT Web",
+      "sublabel": "映射对话 · 通用研究与规划",
+      "pos": [1070, 116],
+      "size": [220, 82]
+    },
+    {
+      "id": "policyState",
+      "type": "database",
+      "label": "Project Policy + State",
+      "sublabel": "config · requests · responses",
+      "tag": "sync / allowCodexTasks",
+      "pos": [60, 350],
+      "size": [210, 90]
+    },
+    {
+      "id": "reverseBridge",
+      "type": "backend",
+      "label": "Bundled Reverse MCP",
+      "sublabel": "127.0.0.1:8876/mcp",
+      "tag": "9 MCP tools",
+      "pos": [320, 350],
+      "size": [210, 90]
+    },
+    {
+      "id": "tunnelClient",
+      "type": "backend",
+      "label": "tunnel-client",
+      "sublabel": "受管本地 runtime · ready",
+      "pos": [610, 354],
+      "size": [190, 82]
+    },
+    {
+      "id": "secureTunnel",
+      "type": "messagebus",
+      "label": "OpenAI Secure MCP Tunnel",
+      "sublabel": "outbound poll / response",
+      "tag": "no_auth MCP",
+      "pos": [850, 354],
+      "size": [190, 82]
+    },
+    {
+      "id": "developerConnector",
+      "type": "frontend",
+      "label": "Transceiver Connector",
+      "sublabel": "ChatGPT Developer Mode",
+      "pos": [1080, 354],
+      "size": [200, 82]
+    },
+    {
+      "id": "appServer",
+      "type": "backend",
+      "label": "Codex App Server",
+      "sublabel": "thread/start · turn/start · resume",
+      "pos": [320, 580],
+      "size": [210, 82]
+    },
+    {
+      "id": "authorizedProjects",
+      "type": "security",
+      "label": "Authorized Project Roots",
+      "sublabel": "当前：ACCV26",
+      "tag": "read-only · network disabled",
+      "pos": [60, 576],
+      "size": [210, 90]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Local macOS trust boundary",
+      "wraps": ["codex", "plugin", "browserTransport", "policyState", "reverseBridge", "tunnelClient", "appServer", "authorizedProjects"],
+      "pad": 30
+    },
+    {
+      "kind": "region",
+      "label": "OpenAI / ChatGPT cloud",
+      "wraps": ["chatgptWeb", "developerConnector", "secureTunnel"],
+      "pad": 28
+    }
+  ],
+  "connections": [
+    {
+      "id": "codexToPlugin",
+      "from": "codex",
+      "to": "plugin",
+      "label": "$transceiver / SessionStart",
+      "labelAt": [280, 112],
+      "variant": "emphasis"
+    },
+    {
+      "id": "pluginToPolicy",
+      "from": "plugin",
+      "to": "policyState",
+      "label": "先判定项目策略，再读取正文",
+      "variant": "security"
+    },
+    {
+      "id": "pluginToBrowser",
+      "from": "plugin",
+      "to": "browserTransport",
+      "label": "bounded |from_codex|: handoff",
+      "labelAt": [570, 212],
+      "variant": "emphasis"
+    },
+    {
+      "id": "browserToChatgpt",
+      "from": "browserTransport",
+      "to": "chatgptWeb",
+      "label": "可见发送 + action-time confirmation"
+    },
+    {
+      "id": "chatgptToConnector",
+      "from": "chatgptWeb",
+      "to": "developerConnector",
+      "label": "选择 Transceiver 工具",
+      "labelAt": [1180, 212]
+    },
+    {
+      "id": "connectorToTunnel",
+      "from": "developerConnector",
+      "to": "secureTunnel",
+      "label": "MCP JSON-RPC",
+      "labelAt": [1060, 450],
+      "variant": "emphasis"
+    },
+    {
+      "id": "tunnelToClient",
+      "from": "secureTunnel",
+      "to": "tunnelClient",
+      "label": "poll command / post response",
+      "labelAt": [825, 450],
+      "variant": "emphasis"
+    },
+    {
+      "id": "clientToBridge",
+      "from": "tunnelClient",
+      "to": "reverseBridge",
+      "label": "Streamable HTTP",
+      "variant": "emphasis"
+    },
+    {
+      "id": "policyToBridge",
+      "from": "policyState",
+      "to": "reverseBridge",
+      "label": "eligible cwd + durable jobs / sessions",
+      "labelAt": [295, 454],
+      "variant": "security"
+    },
+    {
+      "id": "bridgeToAppServer",
+      "from": "reverseBridge",
+      "to": "appServer",
+      "label": "|from_chatgpt|: + exact thread routing",
+      "labelAt": [425, 454],
+      "variant": "emphasis"
+    },
+    {
+      "id": "appServerToProjects",
+      "from": "appServer",
+      "to": "authorizedProjects",
+      "label": "read-only Codex turn",
+      "labelAt": [295, 680],
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Forward handoff",
+      "items": [
+        "Codex 只在显著里程碑、阻塞或显式请求时发送",
+        "helper 生成 request_id，并用 |from_codex|: 标记来源",
+        "浏览器传输复用用户已登录的精确 ChatGPT 对话"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Reverse delegation",
+      "items": [
+        "Developer Connector 经 Secure MCP Tunnel 调用 9 个工具",
+        "reverse bridge 固定 App Server、read-only、禁网与项目 cwd",
+        "task / status / resume / steer / cancel 共用持久 thread 与 job 状态"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "State and provenance",
+      "items": [
+        "双向消息分别保留 |from_codex|: 与 |from_chatgpt|:",
+        "Transceiver 状态只记录交付与执行，不冒充产品原生记忆",
+        "ChatGPT Saved Memory、Codex memory 与共享显式 profile 保持独立来源"
+      ]
+    }
+  ]
+}

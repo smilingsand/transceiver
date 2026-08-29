@@ -1,0 +1,19 @@
+{
+  "description": "Load the current project's Transceiver sync policy into Codex.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/transceiver.mjs\" context --root \"$PWD\"",
+            "timeout": 5,
+            "statusMessage": "Loading Transceiver project policy...",
+            "additionalContextLimit": 2000
+          }
+        ]
+      }
+    ]
+  }
+}
