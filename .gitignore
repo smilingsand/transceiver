@@ -227,3 +227,7 @@ __marimo__/
 
 # macOS Garbage
 .DS_Store
+
+# Bridge Lab local work
+/proj-info/
+/codex/
