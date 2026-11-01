@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import { resolveReversePermissions } from "./reverse-permissions.mjs";
+
 import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -40,10 +42,7 @@ Object.assign(process.env, {
   CODEX_MCP_BRIDGE_ALLOWED_HOSTS: "127.0.0.1,localhost",
   CODEX_MCP_BRIDGE_ROOTS: allowedProjects.map((project) => project.root).join(","),
   CODEX_MCP_BRIDGE_DEFAULT_BACKEND: "app-server",
-  CODEX_MCP_BRIDGE_DEFAULT_SANDBOX: "read-only",
-  CODEX_MCP_BRIDGE_DEFAULT_ACCESS_STRATEGY: "read-only",
-  CODEX_MCP_BRIDGE_ALLOW_WRITE: "0",
-  CODEX_MCP_BRIDGE_ALLOW_DANGER_FULL_ACCESS: "0",
+  ...resolveReversePermissions(process.env),
   CODEX_MCP_BRIDGE_APPROVAL_POLICY: "never",
   CODEX_MCP_BRIDGE_DISABLE_SECRET_SCAN: "1",
   CODEX_MCP_BRIDGE_MAX_CONCURRENT_JOBS: process.env.CODEX_MCP_BRIDGE_MAX_CONCURRENT_JOBS || "4",
