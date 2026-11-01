@@ -130,78 +130,119 @@ switch ($Action) {
         Assert-File $runtime 'Reverse runtime entry'
         if (-not (Test-Path -LiteralPath $ProfileDir -PathType Container)) { throw "Profile directory not found: $ProfileDir" }
         if (-not (Test-Path -LiteralPath $StateDir -PathType Container)) { throw "State directory not found: $StateDir" }
+
+        # Reconcile controller-owned processes. Never adopt or stop unknown processes.
         $record = Read-Record
-        if ($record) {
-            if ((Find-Process $record.bridge 'reverse-runtime.mjs') -or (Find-Process $record.tunnel 'tunnel-client.exe')) {
-                throw 'Existing controller-managed process detected. Run status/stop first.'
-            }
-            throw "Stale PID record exists: $pidPath. Inspect and remove it manually after confirming processes are gone."
+        if ($record -and $record.configPath -and [string]$record.configPath -ne $ConfigPath) {
+            throw 'Controller record belongs to a different config path; refusing to reuse running processes.'
         }
-        $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-        if ($listener) { throw "Port $Port already has a listener. Refusing to start a second Bridge." }
-        $existingTunnel = Get-CimInstance Win32_Process -Filter "Name='tunnel-client.exe'" -ErrorAction SilentlyContinue
-        if ($existingTunnel) { throw 'tunnel-client.exe is already running. Refusing duplicate tunnel. Use status and inspect manually.' }
-        $node = Resolve-Executable $NodeExe
+        $managedBridge = $null
+        $managedTunnel = $null
+        if ($record) {
+            $managedBridge = Find-Process $record.bridge 'reverse-runtime.mjs'
+            $managedTunnel = Find-Process $record.tunnel 'tunnel-client.exe'
+        }
+        $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($listener -and (-not $managedBridge -or [int]$listener.OwningProcess -ne [int]$managedBridge.ProcessId)) {
+            throw "Port $Port is in use by a non-managed listener PID $($listener.OwningProcess); refusing to replace or adopt it."
+        }
+        if ($managedBridge -and -not (Test-Health)) {
+            throw 'Managed Bridge is alive but unhealthy; refusing to terminate an active process automatically. Inspect status and logs.'
+        }
+        $existingTunnels = @(Get-CimInstance Win32_Process -Filter "Name='tunnel-client.exe'" -ErrorAction SilentlyContinue)
+        $foreignTunnels = @($existingTunnels | Where-Object { -not $managedTunnel -or [int]$_.ProcessId -ne [int]$managedTunnel.ProcessId })
+        if ($foreignTunnels.Count -gt 0) {
+            throw 'Unmanaged tunnel-client.exe process detected. Inspect it before starting; refusing to adopt or create a duplicate.'
+        }
+        if ($managedBridge -and $managedTunnel) {
+            Write-Host 'Bridge and Tunnel are already managed and running. No restart needed.'
+            Show-Status
+            break
+        }
+
         $prior = @{}
         foreach ($k in @('TRANSCEIVER_CONFIG','TRANSCEIVER_STATE_DIR','TRANSCEIVER_GIT_EXECUTABLE','CONTROL_PLANE_API_KEY','CONTROL_PLANE_TUNNEL_ID','PATH')) {
             $prior[$k] = [Environment]::GetEnvironmentVariable($k,'Process')
         }
-        $bridge = $null
-        $tunnel = $null
+        $newBridge = $null
+        $newTunnel = $null
         try {
-            $env:TRANSCEIVER_CONFIG = $ConfigPath
-            $env:TRANSCEIVER_STATE_DIR = $StateDir
-            $env:TRANSCEIVER_GIT_EXECUTABLE = $GitExe
-            $selectedCodexBin = Resolve-CodexBin
-            # Prepend only the validated pinned CLI directory for the child Bridge.
-            # This is independent of user PATH, and prior PATH is restored in finally.
-            $env:PATH = "$selectedCodexBin;$env:PATH"
-            $bridgeLogs = New-LogPaths 'bridge'
-            $bridge = Start-Process -FilePath $node -ArgumentList @($runtime) -WorkingDirectory $pluginDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $bridgeLogs.Out -RedirectStandardError $bridgeLogs.Err
-            $bridgeInfo = New-Entry $bridge
-            $ready = $false
-            foreach ($i in 1..20) {
-                Start-Sleep -Milliseconds 500
-                if (Test-Health) { $ready = $true; break }
-                $bridge.Refresh()
-                if ($bridge.HasExited) { break }
+            # Keep the exact record entries for processes that remain alive.
+            $bridgeInfo = if ($managedBridge) { $record.bridge } else { $null }
+            $tunnelInfo = if ($managedTunnel) { $record.tunnel } else { $null }
+            $bridgeOut = if ($record -and $record.logs) { [string]$record.logs.bridgeOut } else { $null }
+            $bridgeErr = if ($record -and $record.logs) { [string]$record.logs.bridgeErr } else { $null }
+            $tunnelOut = if ($record -and $record.logs) { [string]$record.logs.tunnelOut } else { $null }
+            $tunnelErr = if ($record -and $record.logs) { [string]$record.logs.tunnelErr } else { $null }
+            $selectedCodexExe = if ($record -and $record.codexExe) { [string]$record.codexExe } else { $null }
+
+            if (-not $managedBridge) {
+                if ($listener) { throw "Port $Port has an unexpected listener; refusing Bridge startup." }
+                $node = Resolve-Executable $NodeExe
+                $env:TRANSCEIVER_CONFIG = $ConfigPath
+                $env:TRANSCEIVER_STATE_DIR = $StateDir
+                $env:TRANSCEIVER_GIT_EXECUTABLE = $GitExe
+                $selectedCodexBin = Resolve-CodexBin
+                $selectedCodexExe = Join-Path $selectedCodexBin 'codex.exe'
+                $env:PATH = "$selectedCodexBin;$env:PATH"
+                $bridgeLogs = New-LogPaths 'bridge'
+                $newBridge = Start-Process -FilePath $node -ArgumentList @($runtime) -WorkingDirectory $pluginDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $bridgeLogs.Out -RedirectStandardError $bridgeLogs.Err
+                $bridgeInfo = New-Entry $newBridge
+                $bridgeOut = $bridgeLogs.Out
+                $bridgeErr = $bridgeLogs.Err
+                $ready = $false
+                foreach ($i in 1..20) {
+                    Start-Sleep -Milliseconds 500
+                    $listenNow = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+                    if ($listenNow -and [int]$listenNow.OwningProcess -eq [int]$newBridge.Id -and (Test-Health)) { $ready = $true; break }
+                    $newBridge.Refresh()
+                    if ($newBridge.HasExited) { break }
+                }
+                if (-not $ready) { throw "Bridge did not become healthy. Review: $bridgeOut and $bridgeErr" }
+                Write-Host "Started missing Bridge PID $($newBridge.Id)."
             }
-            if (-not $ready) { throw "Bridge did not become healthy. Review: $($bridgeLogs.Out) and $($bridgeLogs.Err)" }
-            # Map the user's existing Windows user variables into the tunnel-client's
-            # expected process-local names. Never write secrets to a file or log.
-            $tunnelKey = Resolve-TunnelCredential 'OpenAI_Tunnel_API_KEY'
-            $tunnelId = Resolve-TunnelCredential 'Tunnel_ID'
-            if ([string]::IsNullOrWhiteSpace($tunnelKey) -or [string]::IsNullOrWhiteSpace($tunnelId)) {
-                throw 'Missing user credentials: OpenAI_Tunnel_API_KEY and/or Tunnel_ID. Configure them in Windows user environment variables.'
+            if (-not $managedTunnel) {
+                # The normal controller path maps persistent credentials to the names
+                # expected by tunnel-client. Values are never persisted to logs or JSON.
+                $tunnelKey = Resolve-TunnelCredential 'OpenAI_Tunnel_API_KEY'
+                $tunnelId = Resolve-TunnelCredential 'Tunnel_ID'
+                if ([string]::IsNullOrWhiteSpace($tunnelKey) -or [string]::IsNullOrWhiteSpace($tunnelId)) {
+                    throw 'Missing user credentials: OpenAI_Tunnel_API_KEY and/or Tunnel_ID. Configure Windows user environment variables.'
+                }
+                if (-not $tunnelId.StartsWith('tunnel_')) {
+                    throw 'Tunnel_ID must contain the full ID, including its tunnel_ prefix.'
+                }
+                $env:CONTROL_PLANE_API_KEY = $tunnelKey
+                $env:CONTROL_PLANE_TUNNEL_ID = $tunnelId
+                $tunnelLogs = New-LogPaths 'tunnel'
+                $newTunnel = Start-Process -FilePath $TunnelExe -ArgumentList @('run','--profile',$TunnelProfile,'--profile-dir',('"' + $ProfileDir + '"')) -WorkingDirectory (Split-Path -Parent $TunnelExe) -PassThru -WindowStyle Hidden -RedirectStandardOutput $tunnelLogs.Out -RedirectStandardError $tunnelLogs.Err
+                $tunnelInfo = New-Entry $newTunnel
+                $tunnelOut = $tunnelLogs.Out
+                $tunnelErr = $tunnelLogs.Err
+                Start-Sleep -Seconds 2
+                $newTunnel.Refresh()
+                if ($newTunnel.HasExited) { throw "Tunnel Client exited at startup. Review: $tunnelOut and $tunnelErr" }
+                Write-Host "Started missing Tunnel PID $($newTunnel.Id)."
             }
-            if (-not $tunnelId.StartsWith('tunnel_')) {
-                throw 'Tunnel_ID must contain the full ID, including its tunnel_ prefix.'
-            }
-            $env:CONTROL_PLANE_API_KEY = $tunnelKey
-            $env:CONTROL_PLANE_TUNNEL_ID = $tunnelId
-            $tunnelLogs = New-LogPaths 'tunnel'
-            $tunnel = Start-Process -FilePath $TunnelExe -ArgumentList @('run','--profile',$TunnelProfile,'--profile-dir',('"' + $ProfileDir + '"')) -WorkingDirectory (Split-Path -Parent $TunnelExe) -PassThru -WindowStyle Hidden -RedirectStandardOutput $tunnelLogs.Out -RedirectStandardError $tunnelLogs.Err
-            $tunnelInfo = New-Entry $tunnel
-            Start-Sleep -Seconds 2
-            $tunnel.Refresh()
-            if ($tunnel.HasExited) { throw "Tunnel Client exited at startup. Review: $($tunnelLogs.Out) and $($tunnelLogs.Err)" }
-            # Secrets should only be inherited by tunnel-client, not retained in the shell.
-            Remove-Variable tunnelKey -ErrorAction SilentlyContinue
-            Write-Record @{ version = 2; bridge = $bridgeInfo; tunnel = $tunnelInfo; configPath = $ConfigPath; codexExe = (Join-Path $selectedCodexBin 'codex.exe'); logs = @{ bridgeOut=$bridgeLogs.Out; bridgeErr=$bridgeLogs.Err; tunnelOut=$tunnelLogs.Out; tunnelErr=$tunnelLogs.Err } }
-            Write-Host "Started Bridge PID $($bridge.Id) and Tunnel PID $($tunnel.Id)."
+            # Write one complete record only after successful reconciliation.
+            Write-Record @{ version = 2; bridge = $bridgeInfo; tunnel = $tunnelInfo; configPath = $ConfigPath; codexExe = $selectedCodexExe; logs = @{ bridgeOut=$bridgeOut; bridgeErr=$bridgeErr; tunnelOut=$tunnelOut; tunnelErr=$tunnelErr } }
             Show-Status
         }
         catch {
-            if ($tunnel -and -not $tunnel.HasExited -and -not (Test-Path -LiteralPath $pidPath)) {
-                Stop-Process -Id $tunnel.Id -ErrorAction SilentlyContinue
+            # Roll back only new processes launched by this invocation. Existing
+            # controller-owned processes and the previous PID record are untouched.
+            if ($newTunnel) {
+                $newTunnel.Refresh()
+                if (-not $newTunnel.HasExited) { Stop-Process -Id $newTunnel.Id -ErrorAction SilentlyContinue }
             }
-            if ($bridge -and -not $bridge.HasExited -and -not (Test-Path -LiteralPath $pidPath)) {
-                # If tunnel launch failed, stop only the Bridge started in this invocation.
-                Stop-Process -Id $bridge.Id -ErrorAction SilentlyContinue
+            if ($newBridge) {
+                $newBridge.Refresh()
+                if (-not $newBridge.HasExited) { Stop-Process -Id $newBridge.Id -ErrorAction SilentlyContinue }
             }
             throw
         }
         finally {
+            Remove-Variable tunnelKey -ErrorAction SilentlyContinue
             foreach ($k in $prior.Keys) { [Environment]::SetEnvironmentVariable($k,$prior[$k],'Process') }
         }
         break
