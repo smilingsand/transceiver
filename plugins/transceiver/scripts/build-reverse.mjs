@@ -3,15 +3,19 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 
 const pluginRoot = path.resolve(import.meta.dirname, "..");
 const outputDir = path.join(pluginRoot, "dist", "reverse-bridge");
 const bundlePath = path.join(outputDir, "index.mjs");
-const ncc = path.join(pluginRoot, "node_modules", ".bin", process.platform === "win32" ? "ncc.cmd" : "ncc");
+const require = createRequire(import.meta.url);
+const ncc = require.resolve("@vercel/ncc/dist/ncc/cli.js");
 
 await fs.rm(outputDir, { recursive: true, force: true });
 
-const build = spawnSync(ncc, [
+// Invoke the JS CLI directly: Windows cannot spawn a .cmd shim without a shell.
+const build = spawnSync(process.execPath, [
+  ncc,
   "build",
   "scripts/reverse-runtime.mjs",
   "-o",

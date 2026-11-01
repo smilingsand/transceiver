@@ -6,10 +6,11 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { loadConfig as loadBridgeConfig } from "codex-mcp-bridge-for-chatgpt/dist/config.js";
-import { createHttpServer } from "codex-mcp-bridge-for-chatgpt/dist/server.js";
+import { createHttpServer } from "./reverse-http.mjs";
 import { CodexUpstreamPool } from "codex-mcp-bridge-for-chatgpt/dist/upstream.js";
 import { CodexAppServerUpstreamPool } from "codex-mcp-bridge-for-chatgpt/dist/appServerUpstream.js";
 import { TransceiverRouter } from "./reverse-router.mjs";
+import { createDeterministicServices } from "./deterministic/create-services.mjs";
 
 const TRANSCEIVER_CONFIG = process.env.TRANSCEIVER_CONFIG || path.join(homedir(), ".config", "transceiver", "config.json");
 const TRANSCEIVER_STATE_DIR = process.env.TRANSCEIVER_STATE_DIR || path.join(homedir(), ".local", "state", "transceiver");
@@ -76,6 +77,8 @@ if (process.argv.includes("--doctor")) {
   process.exit(codex.status === 0 ? 0 : 1);
 }
 
+const deterministicServices = await createDeterministicServices({ configPath: TRANSCEIVER_CONFIG });
+
 const threadProjectsFile = path.join(reverseStateDir, "thread-projects.json");
 let storedThreadProjects = {};
 try {
@@ -103,7 +106,7 @@ const upstream = new TransceiverRouter(
   new CodexAppServerUpstreamPool(config.codexCommand, config.upstreamPoolSize),
   { allowedProjects, threadProjects: storedThreadProjects, persistThreadProjects },
 );
-const server = createHttpServer(config, upstream);
+const server = createHttpServer(config, upstream, deterministicServices);
 let shuttingDown = false;
 
 server.listen(config.port, config.host, () => {

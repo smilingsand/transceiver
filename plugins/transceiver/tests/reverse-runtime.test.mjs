@@ -13,6 +13,8 @@ import { TransceiverRouter } from "../scripts/reverse-router.mjs";
 
 const PLUGIN_ROOT = path.resolve(import.meta.dirname, "..");
 const BUNDLE = path.join(PLUGIN_ROOT, "dist", "reverse-bridge", "index.mjs");
+const TEST_GIT = process.env.TRANSCEIVER_TEST_GIT || (process.platform === "win32"
+  ? "D:/Program Files/Git/mingw64/bin/git.exe" : "/usr/bin/git");
 
 function invoke(command, args, env) {
   return new Promise((resolve, reject) => {
@@ -130,6 +132,7 @@ test("bundled reverse server starts outside the repository", async (t) => {
       TRANSCEIVER_CONFIG: configPath,
       TRANSCEIVER_STATE_DIR: path.join(directory, "state"),
       TRANSCEIVER_REVERSE_PORT: String(port),
+      TRANSCEIVER_GIT_EXECUTABLE: TEST_GIT,
     },
   });
   let stderr = "";
