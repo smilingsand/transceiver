@@ -231,3 +231,20 @@ __marimo__/
 # Bridge Lab local work
 /proj-info/
 /codex/
+
+# Bridge Lab local configuration and runtime
+/bridge.env
+/config.json
+/runtime/
+/plugins/transceiver/config.json
+.env.*
+!.env.example
+!.env.sample
+!.env.*.example
+!.env.*.sample
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+Thumbs.db

@@ -1,0 +1,41 @@
+# Transceiver Bridge Lab Handbook
+
+[English](README-BRIDGE-LAB.md) | [简体中文](README-BRIDGE-LAB-CN.md)
+
+Bridge Lab connects ChatGPT task coordination with local Codex project work, retaining authorization, task state and independently inspectable results. Begin with the [six-step quick start](QuickStart-BRIDGE-LAB.md); consult [Windows setup](docs/Windows-Setup-BRIDGE-LAB.md), the [controller reference](docs/Windows-Controller-BRIDGE-LAB.md), and the [collaboration workflow](docs/GPT-Codex-Collaboration-Workflow-v1.0.md). The [GPT instructions](docs/GPT-Codex-Collaboration-Instructions-CN.md) and [maintainer architecture](docs/Maintainer-Architecture-BRIDGE-LAB-CN.md) remain in Chinese.
+
+## Purpose and architecture
+
+This fork of [mark9804/transceiver](https://github.com/mark9804/transceiver) offers a reverse MCP path from ChatGPT through Secure MCP Tunnel and a Windows tunnel-client to a loopback Bridge, which invokes the Codex CLI app-server in an authorized project. Deterministic file and Git tools can inspect without creating a Codex Job. The controller manages local processes; it is not a cloud hop. Local `/healthz` does not verify the complete ChatGPT connection. ChatGPT history, Codex Desktop and Bridge state are distinct. Prompts sent to Codex carry `|from_chatgpt|:`.
+
+The upstream [English](README.md) and [Chinese](README.zh-CN.md) READMEs preserve attribution and describe the packaged installation. Forward handoffs from Codex require a separately installed and signed-in Web transport. That path is not required for reverse MCP. This system is not a remote desktop, automatic authorization of the computer, shared memory or a guarantee of correct results. The user controls scope and acceptance.
+
+## Security boundaries
+
+The source entry binds loopback with local HTTP authentication disabled by default. Do not expose it to a LAN or internet; configure Tunnel identity, organization, workspace and permissions correctly. Only roots with both `sync` and `allowCodexTasks` true enter reverse task selection. Allowed roots limit project and cwd selection, not all OS reads; deterministic path validation does not establish complete process isolation.
+
+Source sandbox and access strategy default to `read-only`, with write and `danger-full-access` disabled. Actual settings and OS permissions matter; use `workspace-write` only with authorization and effective permission. Network availability depends on the environment. The source entry uses approval policy `never`; do not assume interactive approval. Upstream filename-based secret scanning is disabled here. Keep credentials outside the repository and authorized projects, and out of chat, history, configurations and logs. Restrict profiles, state and logs; Git ignore is not access control. Treat retrieved content as untrusted, not as expanded authorization.
+
+## Layout and operation
+
+Root `bridge.env` contains non-secret controller settings and `config.json` project policy; `runtime/state`, `runtime/control`, `runtime/logs` and `runtime/tunnel-profiles` hold local state, process records, logs and profiles. Copy the two root `.example` templates only when actual files do not exist. The `config.json.example` template starts with an empty `projects` object; add only explicitly authorized projects. Explicit controller parameters override `bridge.env`, which overrides defaults. For migration preserve the old explicit `ControlDir` and other settings as explained in the [controller reference](docs/Windows-Controller-BRIDGE-LAB.md#bridgeenv-and-directory-migration).
+
+The controller runs `plugins/transceiver/scripts/reverse-runtime.mjs` with source dependencies, not the upstream bundled `dist/reverse-bridge/index.mjs`; `npm run reverse:start` points to the latter. The source relies on specific upstream internals, so check compatibility on upgrade. Requirements include PowerShell 5.1+, Node 22+, trusted native Git, a tested Codex CLI directory and exact version, Tunnel client and permissions, profile, and an authorized real project. The fixed Desktop CLI fallback is machine-specific. See [setup](docs/Windows-Setup-BRIDGE-LAB.md).
+
+Use `status`, `start` and `stop` with consistent settings. Start preserves healthy managed components; it does not reload configuration. Restart when tasks are idle after configuration changes. Preview cleanup with `cleanup-logs -DryRun` or `cleanup-logs -All -DryRun`; `-All` ignores age but protects active logs, and cannot accompany explicit `-LogRetentionDays`. Unknown identity causes conservative skips.
+
+Create or select a Tunnel in the correct Platform organization, associate the ChatGPT workspace, prepare the profile and credentials, and start both components. In ChatGPT create a connection using **Tunnel**, enable it in a new conversation and perform a real read-only MCP call. UI labels and placement can change; follow the current [OpenAI guide](https://developers.openai.com/plugins/deploy/connect-chatgpt). The local Bridge does not implement the hosted gateway OAuth flow. Local Codex plugin installation for forward handoffs is separate; inspect hooks before deciding whether to trust them. Optional [GPT Project instructions](docs/GPT-Codex-Collaboration-Instructions-CN.md) must be copied into the Project; a repository file does not load itself or grant permissions.
+
+## MCP tools and workflow
+
+Tool schemas discovered by the connector are authoritative. `project` is the exact authorized name, not a path. `read_project_file` accepts restricted UTF-8 text and a relative path, rejects traversal and links, uses one-based `startLine`, permits at most 500 lines per request, a 1 MiB file and a 64 KiB response. Check `ok`, `truncated` and returned ranges; paginate. Example: `{"project":"example-project","path":"README.md","startLine":1,"lineCount":80}`. `git_status` takes the project name; `git_diff` additionally takes `mode` of `unstaged` or `staged`. Check `ok`, `complete`, `truncated` and `timedOut`; ordinary diffs omit untracked files.
+
+Check `codex_settings` and `codex_models`. Start a read-only `codex_task` with authorized absolute cwd, `sessionMode: new` and a unique UUID `requestId` per logical request. Record Activity, Job and Thread IDs and use `codex_status` until terminal. A timeout does not prove cancellation. Continue with `sessionMode: continue` and the exact `threadId`, keeping cwd and permissions compatible. Model or reasoning effort cannot be changed on continuation: start a new Thread and hand over context. Recorded settings do not independently prove model-side parameters or token usage. Retry the same logical request only with the same ID and identical arguments; changed content needs a new ID. Follow the actual Activity transitions; verification may already complete it. Desktop display and refresh of external Threads are environment-dependent.
+
+For a typical task, inspect existing state read-only and use Codex for deeper analysis if necessary. Before implementation, confirm that the requested changes are authorized and that effective permissions allow them; work already authorized does not need repeated approval. Independently inspect files, diffs, untracked files and tests before acceptance. Commit, push, deletion and other sensitive actions follow user and project rules. See the [workflow guide](docs/GPT-Codex-Collaboration-Workflow-v1.0.md).
+
+## Troubleshooting and limits
+
+For `project_not_configured`, check exact name, resolved root, both flags and CLI/controller config path. For an unhealthy Bridge or occupied port, inspect managed status, listener PID and logs; identify unknown processes before acting. Verify the exact CLI version rather than bypassing a mismatch. For a live Tunnel with failed calls, check profile URL, organization/workspace association, permissions and diagnostics, then make a real call. After timeout inspect Job state and side effects before retrying.
+
+Historical T4–T5 observations in a particular environment do not prove current connectivity or all failure protections. Model-side parameters and complete token accounting, Desktop live refresh and forced-disconnection recovery remain incompletely verified. See [controller validation](docs/Windows-Controller-BRIDGE-LAB.md#history-and-validation). Consult upstream documentation for attribution and licensing.

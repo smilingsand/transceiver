@@ -1,6 +1,10 @@
 # Transceiver
 
+
+> Windows Bridge Lab fork: [six-step first-time guide](QuickStart-BRIDGE-LAB.md), using branch `dev/bridge-lab`. The instructions below describe the upstream setup.
 [English](README.md) | [简体中文](README.zh-CN.md)
+
+> **Bridge Lab fork:** The instructions and read-only, network-disabled claims below describe the upstream packaged setup, not the Windows controller's current source runtime. That controller uses root local configs and `<repo>\runtime`; its effective permissions and network access depend on configuration and environment. See the [Bridge Lab handbook](README-BRIDGE-LAB.md).
 
 Transceiver is a bidirectional handoff layer between selected Codex projects and ChatGPT. Either side can request work from the other and receive the result. From Codex, it packages project progress, blockers, plan changes, or consultation requests into a traceable request with visible provenance and a request ID. It can send that request to a mapped or newly created ChatGPT conversation through an installed Web transport, then store the returned research, analysis, or plan revision for the local workflow. From ChatGPT, it exposes a private MCP connection that can start, continue, steer, inspect, and stop read-only, network-disabled Codex tasks under explicitly authorized project roots, then return their status and results to the conversation.
 

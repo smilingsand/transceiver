@@ -114,7 +114,7 @@ node "<plugin-root>/dist/reverse-bridge/index.mjs" --doctor
 node "<plugin-root>/dist/reverse-bridge/index.mjs"
 ```
 
-Connect `http://127.0.0.1:8876/mcp` to ChatGPT through OpenAI Secure MCP Tunnel. The MCP surface provides `codex_task`, `codex_status`, Activity lifecycle, model/settings discovery, steering, and force-stop. It forces App Server, read-only access, no network, and a task working directory under a configured project root. This cwd check is a project-selection policy, not an OS-level read sandbox. Every task, continuation, and steering prompt reaching Codex is rebuilt with `|from_chatgpt|:` as its exact first line.
+Connect `http://127.0.0.1:8876/mcp` to ChatGPT through OpenAI Secure MCP Tunnel. The MCP surface provides `codex_task`, `codex_status`, Activity lifecycle, model/settings discovery, steering, and force-stop. It uses App Server and requires a task working directory under a configured project root. This fork defaults to read-only access; explicit configuration can allow workspace writes, and network restrictions depend on the effective sandbox and environment. This cwd check is a project-selection policy, not an OS-level read sandbox. Every task, continuation, and steering prompt reaching Codex is rebuilt with `|from_chatgpt|:` as its exact first line.
 
 Use `codex_task` to start or continue an exact Codex thread. If it returns a running job, use the Activity card or a bounded `codex_status` wait until terminal, then inspect the returned result before claiming completion.
 

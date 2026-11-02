@@ -2,6 +2,8 @@
 
 Read this only when configuring or using the reverse direction.
 
+For the Bridge Lab fork's Windows controller and source runtime, see the [Chinese Windows setup guide](../../../../../docs/Windows-Setup-BRIDGE-LAB-CN.md). The packaged entry described by the skill is not automatically equivalent to the controller's source entry; effective permissions and startup configuration must be checked for the entry in use.
+
 ## Runtime
 
 Transceiver embeds the fixed `menaje/codex-mcp-bridge-for-chatgpt` v0.3.0 release and adds project-policy derivation plus enforced `|from_chatgpt|:` provenance. The runtime binds only to `127.0.0.1`, uses Codex App Server, and stores its private SQLite state under the Transceiver state directory.
@@ -19,7 +21,7 @@ node "<plugin-root>/scripts/transceiver.mjs" project-set \
   --allow-codex-tasks true
 ```
 
-Only roots with both properties enabled enter `CODEX_MCP_BRIDGE_ROOTS`. Names must be unique. The bundled runtime fixes the access strategy and sandbox to read-only and disables network and mutation capabilities. `CODEX_MCP_BRIDGE_ROOTS` constrains the task cwd; it is not an OS-level read allowlist. The upstream filename-based secret scan is disabled because it blocks ordinary virtual-environment CA bundles; keep credentials outside delegated project context.
+Only roots with both properties enabled enter `CODEX_MCP_BRIDGE_ROOTS`. Names must be unique. This fork defaults to read-only access and disables writes and danger-full-access by default; explicit environment configuration can change these permissions. Network restrictions depend on the effective sandbox and environment. `CODEX_MCP_BRIDGE_ROOTS` constrains the task cwd; it is not an OS-level read allowlist. The upstream filename-based secret scan is disabled because it blocks ordinary virtual-environment CA bundles; keep credentials outside delegated project context.
 
 ## Required proof before claiming availability
 
