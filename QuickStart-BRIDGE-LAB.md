@@ -148,3 +148,7 @@ Verify the actual calls succeeded for the intended project. Tool discovery, loca
 If local health succeeds but the call fails, check the profile URL, organization/workspace association, permissions, connector selection and client doctor output; redact logs. The optional [GPT collaboration instructions](docs/GPT-Codex-Collaboration-Instructions-CN.md) are in Chinese and are not automatically loaded into ChatGPT.
 
 Controller help: `./scripts/bridge-lab.ps1 help` (also `-Action help`, `--Action help`, `-H`, or `/?`). It exits without starting services or reading configuration.
+
+## Optional: controlled Git writes
+
+After the read-only call succeeds, use the discovered MCP tools only when the user authorizes each intended operation and the operator enables its project `gitWrite` flag (default false). Inspect `git_status` and unstaged `git_diff`, read untracked files, call `git_add` with explicit paths, inspect the entire staged diff, then call `git_commit` with an explicit message. Commit needs repository-local `user.name` and `user.email` and refuses active hooks. `git_push` also needs an exact remote URL/branch grant; T5.7 supports local bare targets or credential-free HTTPS, not SSH, credential managers or authenticated private GitHub pushes. A grant is not implicit user approval. See [configuration, MCP examples and limitations](docs/Git-Write-Tools-BRIDGE-LAB.md).

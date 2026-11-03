@@ -1,9 +1,11 @@
 import { ProjectPolicyError } from "../project-policy.mjs";
 import { createGitExecutor } from "./git-executor.mjs";
+import { validateWriteInput } from "./git-write-policy.mjs";
 
 function failure(error) {
   const code = error instanceof ProjectPolicyError ? error.code : "GIT_ACCESS_FAILED";
   return { ok: false, complete: false, truncated: code === "OUTPUT_LIMIT", timedOut: code === "TIMEOUT",
+    ...(error.mutationMayHaveOccurred ? { mutationMayHaveOccurred: true } : {}),
     error: { code, message: error instanceof ProjectPolicyError ? error.message : "Git repository access failed." } };
 }
 
@@ -44,7 +46,28 @@ function parseStatus(bytes, branch) {
 
 export async function createGitTools(options) {
   const executor = await createGitExecutor(options);
+  const write = (operation) => async (input) => {
+    let completed = false;
+    try {
+      input = validateWriteInput(input, operation);
+      const { result, branch } = await executor.execute(input.project, operation, input);
+      completed = true;
+      const { statusBytes, ...details } = result;
+      const output = { ok: true, complete: true, truncated: false, timedOut: false, project: input.project,
+        ...details, ...(statusBytes ? { status: parseStatus(statusBytes, branch) } : {}) };
+      if (jsonBytes(output) > executor.limits.maxResultBytes) {
+        throw new ProjectPolicyError("OUTPUT_LIMIT", "Write completed but its result exceeds the limit; inspect Git state before retrying.");
+      }
+      return output;
+    } catch (error) {
+      if (completed) error.mutationMayHaveOccurred = true;
+      return failure(error);
+    }
+  };
   return Object.freeze({
+    git_add: write("add"),
+    git_commit: write("commit"),
+    git_push: write("push"),
     async git_status(input) {
       try {
         checkInput(input, false);

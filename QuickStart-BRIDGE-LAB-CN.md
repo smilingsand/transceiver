@@ -197,3 +197,7 @@ node .\plugins\transceiver\scripts\transceiver.mjs project-get --root $projectRo
 本地健康但调用失败时，检查 profile URL、Tunnel 组织与工作区、权限及连接器选择；必要时按客户端帮助运行 doctor 并检查脱敏日志。协同规则可选用 [GPT 协同指令](docs/GPT-Codex-Collaboration-Instructions-CN.md)，仓库文件不会自动加载到 ChatGPT。
 
 控制器帮助：`./scripts/bridge-lab.ps1 help`（也支持 `-Action help`, `--Action help`、`-H` 或 `/?`）。帮助命令不会启动服务或读取配置。
+
+## 可选：受控 Git 写入
+
+只读调用成功后，仅在用户授权相应操作、管理员启用项目对应的 `gitWrite` 权限（默认 false）时使用已发现的 MCP 工具。先检查 `git_status` 和未暂存的 `git_diff`，读取未跟踪文件；再用 `git_add` 指定路径，审查整个暂存区的差异，最后用明确消息调用 `git_commit`。提交需要仓库本地 `user.name` 和 `user.email`，并拒绝活动 hooks。`git_push` 还需要精确授权 remote URL/branch；T5.7 仅支持本地 bare 仓库或无凭据 HTTPS，不支持 SSH、凭据管理器或私有 GitHub 认证推送。配置授权不代表用户隐式批准。参见[配置、MCP 示例和限制](docs/Git-Write-Tools-BRIDGE-LAB-CN.md)。

@@ -1,0 +1,79 @@
+{
+  "git_add": {
+    "type": "object",
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "Exact authorized Transceiver project name."
+      },
+      "paths": {
+        "minItems": 1,
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        }
+      }
+    },
+    "required": [
+      "project",
+      "paths"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false
+  },
+  "git_commit": {
+    "type": "object",
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "Exact authorized Transceiver project name."
+      },
+      "message": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 8192
+      }
+    },
+    "required": [
+      "project",
+      "message"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false
+  },
+  "git_push": {
+    "type": "object",
+    "properties": {
+      "project": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "description": "Exact authorized Transceiver project name."
+      },
+      "remote": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      },
+      "branch": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200
+      }
+    },
+    "required": [
+      "project",
+      "remote",
+      "branch"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "additionalProperties": false
+  }
+}

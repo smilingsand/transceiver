@@ -17,7 +17,7 @@ export const GIT = process.env.TRANSCEIVER_TEST_GIT || (process.platform === "wi
   ? "D:/Program Files/Git/mingw64/bin/git.exe" : "/usr/bin/git");
 export const ORIGINAL_TOOLS = ["codex_status", "codex_activity", "codex_activity_handoff", "codex_cancel",
   "codex_activity_update", "codex_models", "codex_settings", "codex_update_settings", "codex_task"];
-export const NEW_TOOLS = ["read_project_file", "git_status", "git_diff"];
+export const NEW_TOOLS = ["read_project_file", "git_status", "git_diff", "git_add", "git_commit", "git_push"];
 export const META_A = { "openai/organization": "fixture-org", "openai/subject": "fixture-user",
   "openai/session": "fixture-chat-a", "openai/locale": "zh-CN", "openai/widgetSessionId": "fixture-widget" };
 export const META_B = { ...META_A, "openai/session": "fixture-chat-b" };

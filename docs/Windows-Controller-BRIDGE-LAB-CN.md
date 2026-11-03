@@ -16,6 +16,8 @@ PowerShell 控制器
 
 控制器不创建项目授权、Tunnel、profile 或账号权限。修改项目配置后，已运行的 Bridge 不会因重复 `start` 自动重新加载；应确认任务空闲，在合适的维护窗口重启受管组件，再通过 `codex_settings` 核对 `capabilities.allowedRoots`。该列表是 Bridge 的 cwd 策略，不是 OS 读取白名单。
 
+确定性 Git 写入使用 `ConfigPath` 指向的项目策略：各项 `gitWrite` 默认 false，推送还需精确 URL/branch 授权。已有授权根目录的权限在子进程前重新加载；新增或重新绑定根目录需要重建 host policy。配置或连接器提示都不能代替用户授权。参见 [Git 写入配置、传输限制和仅重启 Bridge 的部署说明](Git-Write-Tools-BRIDGE-LAB-CN.md)。
+
 ## 参数与前提
 
 脚本根据自身位置确定仓库根目录，不依赖当前工作目录；根目录 `bridge.env` 可提供非秘密参数，命令行优先，其次文件，最后 Controller 默认值。新环境应填写工具路径、profile 和已验证 Codex 版本；参数说明见 [快速开始](../QuickStart-BRIDGE-LAB-CN.md#4-配置控制器并授权项目)，常用命令见 [控制器操作](../QuickStart-BRIDGE-LAB-CN.md#5-启动检查停止和日志维护)。

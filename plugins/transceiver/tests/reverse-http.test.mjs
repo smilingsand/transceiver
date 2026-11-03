@@ -17,9 +17,39 @@ import { createProjectTools } from "../scripts/deterministic/project-tools.mjs";
 import { createGitTools } from "../scripts/deterministic/git-tools.mjs";
 import { createDeterministicServices } from "../scripts/deterministic/create-services.mjs";
 import { GIT, ORIGINAL_TOOLS, NEW_TOOLS, META_A, META_B, createFixture, memoryClient,
-  call, succeeded, taskArgs } from "./helpers/mcp-fixture.mjs";
+  call, succeeded, taskArgs, fixtureGit } from "./helpers/mcp-fixture.mjs";
 
-test("12 unique tools preserve all original schemas/annotations/metadata and both card resources", async (t) => {
+test("Git writes are denied by default through MCP and an authorized offline workflow uses no model", async (t) => {
+  const f = await createFixture(t);
+  const inputs = { git_add: { project: "demo", paths: ["sample.txt"] },
+    git_commit: { project: "demo", message: "T5.7 - test: HTTP fixture" },
+    git_push: { project: "demo", remote: "origin", branch: "main" } };
+  for (const [name, args] of Object.entries(inputs)) {
+    const result = await call(f.client, name, args);
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.error.code, "GIT_WRITE_NOT_AUTHORIZED");
+  }
+  await fixtureGit(f.root, ["config", "user.name", "Fixture"]);
+  await fixtureGit(f.root, ["config", "user.email", "fixture@example.invalid"]);
+  const bare = path.join(f.directory, "remote.git");
+  await fixtureGit(f.directory, ["init", "--bare", "--template=", bare]);
+  const url = bare.split(path.sep).join("/");
+  await fixtureGit(f.root, ["remote", "add", "origin", url]);
+  f.projects.projects[f.root].gitWrite = { add: true, commit: true, push: true,
+    pushTargets: [{ remote: "origin", url, branches: ["main"] }] };
+  await f.save();
+  succeeded(await call(f.client, "git_status", { project: "demo" }));
+  succeeded(await call(f.client, "git_diff", { project: "demo", mode: "staged" }));
+  succeeded(await call(f.client, "git_add", inputs.git_add));
+  const commit = succeeded(await call(f.client, "git_commit", inputs.git_commit));
+  assert.match(commit.hash, /^[a-f0-9]{40}$/u);
+  assert.equal(succeeded(await call(f.client, "git_push", inputs.git_push)).result, "created");
+  assert.equal((await fs.readFile(path.join(bare, "refs", "heads", "main"), "utf8")).trim(), commit.hash);
+  assert.equal(f.backend.calls.length, 0);
+  assert.equal(f.catalog.calls, 0);
+});
+
+test("15 unique tools preserve all original schemas/annotations/metadata and both card resources", async (t) => {
   const f = await createFixture(t);
   const state = createSharedBridgeState({ ...f.config, stateDatabaseFile: path.join(f.directory, "baseline.sqlite") },
     f.upstream, { modelCatalog: f.catalog });
@@ -28,8 +58,8 @@ test("12 unique tools preserve all original schemas/annotations/metadata and bot
     state.sessions, state.jobs, state.modelCatalog, state.userSettings, state.scopeResolver));
   const actual = (await f.client.listTools()).tools;
   const expected = (await baseline.listTools()).tools;
-  assert.equal(actual.length, 12);
-  assert.equal(new Set(actual.map((tool) => tool.name)).size, 12);
+  assert.equal(actual.length, 15);
+  assert.equal(new Set(actual.map((tool) => tool.name)).size, 15);
   assert.deepEqual(expected.map((tool) => tool.name), ORIGINAL_TOOLS);
   assert.deepEqual(actual.filter((tool) => ORIGINAL_TOOLS.includes(tool.name)), JSON.parse(JSON.stringify(expected)));
   assert.deepEqual(actual.filter((tool) => NEW_TOOLS.includes(tool.name)).map((tool) => tool.name), NEW_TOOLS);
@@ -175,7 +205,7 @@ test("shared state preserves request replay, thread continuation, scope isolatio
   assert.equal(complete.activity.lifecycle, "completed");
   assert.equal((await call(f.client, "codex_activity_update", { activityId, action: "abandon", reason: "cross-scope" }, META_B)).isError, true);
   assert.equal(f.backend.closed, 0);
-  assert.equal((await f.client.listTools()).tools.length, 12);
+  assert.equal((await f.client.listTools()).tools.length, 15);
 });
 
 test("HTTP activity title reaches the new thread naming request", async (t) => {
@@ -408,7 +438,7 @@ test("HTTP protocol matches upstream: health/discovery/Host/auth/405/Accept/JSON
   assert.equal(response.headers.get("mcp-session-id"), null);
   const text = await response.text();
   const messages = text.split("\n").filter((line) => line.startsWith("data: ")).map((line) => JSON.parse(line.slice(6)));
-  assert.equal(messages.find((message) => message.id === rpc.id).result.tools.length, 12);
+  assert.equal(messages.find((message) => message.id === rpc.id).result.tools.length, 15);
   for (const headers of [{ ...auth, Accept: "application/json" }, { ...auth, "mcp-protocol-version": "invalid" }]) {
     const [actual, expected] = await Promise.all([f.url, oldUrl].map((url) => rawPost(url, rpc, headers)));
     assert.equal(actual.status, expected.status);
@@ -438,6 +468,6 @@ test("HTTP internal failures are sanitized and do not close shared state or the 
     assert.equal(response.status, 500);
     assert.deepEqual(await response.json(), { jsonrpc: "2.0", error: { code: -32603, message: "Internal server error" }, id: null });
   } finally { mock.mock.restore(); logs.mock.restore(); }
-  assert.equal((await f.client.listTools()).tools.length, 12);
+  assert.equal((await f.client.listTools()).tools.length, 15);
   assert.equal(f.backend.closed, 0);
 });

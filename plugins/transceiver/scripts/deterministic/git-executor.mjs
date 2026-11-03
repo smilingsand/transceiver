@@ -3,10 +3,14 @@ import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { ProjectPolicyError, sameIdentity } from "../project-policy.mjs";
 import { createGitEnvironment, fixedGitArguments, inspectGitExecutable, inspectGitRepository } from "./git-safety.mjs";
+import { authorizeWrite, validateWriteInput, WRITE_OPERATIONS } from "./git-write-policy.mjs";
+import { executeGitWrite } from "./git-write-operations.mjs";
 
 export const GIT_LIMITS = Object.freeze({ timeoutMs: 10_000, maxOutputBytes: 1024 * 1024,
   maxResultBytes: 64 * 1024, maxEntries: 20_000, maxConcurrent: 4 });
 let activeOperations = 0;
+const writingProjects = new Set();
+const accessingProjects = new Map();
 
 const COMMANDS = Object.freeze({
   status: ["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all", "--ignore-submodules=all", "--no-renames"],
@@ -20,20 +24,42 @@ function runChild(executable, args, options, budget) {
     let error;
     let length = 0;
     const stdout = [];
+    const stderr = [];
     const fail = (code, message) => {
-      error ||= new ProjectPolicyError(code, message);
-      // No shell/helpers are permitted. kill() targets only this owned process;
-      // wait for close before releasing its concurrency slot.
-      try { child?.kill("SIGKILL"); }
+      if (error) return;
+      error = new ProjectPolicyError(code, message);
+      // Push may create trusted transport/receive-pack children. Terminate only
+      // this owned process tree, never an existing Bridge or Tunnel process.
+      try {
+        if (budget.processTree && Number.isSafeInteger(child?.pid) && child.pid > 0) {
+          if (process.platform === "win32") {
+            childProcess.execFile(path.join(process.env.SystemRoot || "C:\\Windows", "System32", "taskkill.exe"),
+              ["/PID", String(child.pid), "/T", "/F"],
+              { windowsHide: true, shell: false, timeout: 1000, maxBuffer: 4096,
+                env: createGitEnvironment(path.dirname(executable)) }, (terminationError) => {
+                if (terminationError && child.exitCode === null) {
+                  error = new ProjectPolicyError("GIT_TERMINATION_FAILED", "Transport tree termination failed; inspect owned processes and Git state before retrying.");
+                }
+                try { child.kill("SIGKILL"); } catch { /* close determines slot release */ }
+              });
+          } else process.kill(-child.pid, "SIGKILL");
+        } else child?.kill("SIGKILL");
+        // Descendants cannot hold our response open through inherited pipes.
+        child?.stdout.destroy();
+        child?.stderr.destroy();
+      }
       catch { error = new ProjectPolicyError("GIT_TERMINATION_FAILED", "Git process termination failed; its slot remains held until close."); }
     };
-    try { child = childProcess.spawn(executable, args, { ...options, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }); }
+    try { child = childProcess.spawn(executable, args, { ...options,
+      ...(budget.processTree && process.platform !== "win32" ? { detached: true } : {}),
+      shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }); }
     catch { reject(new ProjectPolicyError("GIT_START_FAILED", "Git process could not start.")); return; }
     const timer = setTimeout(() => fail("TIMEOUT", "Git operation exceeded its time budget."), budget.timeoutMs);
     const collect = (chunk, output) => {
       length += chunk.length;
       if (length > budget.maxOutputBytes) fail("OUTPUT_LIMIT", "Git stdout/stderr exceeded its byte limit.");
       if (!error && output) stdout.push(chunk);
+      if (!error && !output) stderr.push(chunk);
     };
     child.stdout.on("data", (chunk) => collect(chunk, true));
     child.stderr.on("data", (chunk) => collect(chunk, false));
@@ -41,7 +67,20 @@ function runChild(executable, args, options, budget) {
     child.on("close", (code) => {
       clearTimeout(timer);
       if (error) reject(error);
-      else if (code !== 0) reject(new ProjectPolicyError("GIT_FAILED", "Git returned a non-zero exit status."));
+      else if (code !== 0 && budget.identityRole && /fatal: no (?:name|email) was given and auto-detection is disabled/iu.test(Buffer.concat(stderr).toString("utf8"))) {
+        reject(new ProjectPolicyError("GIT_IDENTITY_MISSING", `${budget.identityRole} identity is missing. In the authorized project repository, run git config --local user.name "Your Name" and git config --local user.email "you@example.com".`));
+      }
+      else if (code !== 0 && !budget.classifyFailures) reject(new ProjectPolicyError("GIT_FAILED", "Git returned a non-zero exit status."));
+      else if (code !== 0) {
+        // Classify bounded diagnostics, but never return raw subprocess text:
+        // transport/helper messages may contain URLs or credentials.
+        const diagnostic = Buffer.concat([...stderr, ...stdout]).toString("utf8");
+        const category = /non-fast-forward|fetch first|stale info/iu.test(diagnostic) ? "NON_FAST_FORWARD"
+          : /authentication failed|could not read Username|terminal prompts disabled|401|403/iu.test(diagnostic) ? "AUTHENTICATION_FAILED"
+          : /could not resolve|unable to access|failed to connect|connection.*(?:closed|refused|timed out)|network is unreachable/iu.test(diagnostic) ? "NETWORK_ERROR"
+          : /remote rejected|pre-receive hook declined|permission denied/iu.test(diagnostic) ? "REMOTE_REJECTED" : "GIT_FAILED";
+        reject(new ProjectPolicyError(category, `Git failed (${category}, exit ${code}); inspect local state before retrying.`));
+      }
       else resolve({ stdout: Buffer.concat(stdout), outputBytes: length });
     });
   });
@@ -67,30 +106,50 @@ export async function createGitExecutor({ policy, gitExecutable, limits: overrid
   let active = 0;
   return Object.freeze({
     limits,
-    async execute(projectName, operation) {
-      if (!Object.hasOwn(COMMANDS, operation)) throw new ProjectPolicyError("INVALID_ARGUMENT", "Unsupported Git operation.");
+    async execute(projectName, operation, input) {
+      const write = WRITE_OPERATIONS.includes(operation);
+      if (!write && !Object.hasOwn(COMMANDS, operation)) throw new ProjectPolicyError("INVALID_ARGUMENT", "Unsupported Git operation.");
+      if (write) input = validateWriteInput(input, operation);
       if (activeOperations >= GIT_LIMITS.maxConcurrent || active >= limits.maxConcurrent) {
         throw new ProjectPolicyError("BUSY", "Git concurrency limit reached; retry later.");
       }
       activeOperations++;
       active++;
       const deadline = performance.now() + limits.timeoutMs;
+      let writingRoot;
+      let accessRoot;
+      let mutationAttempted = false;
       const checkDeadline = () => {
         if (performance.now() >= deadline) throw new ProjectPolicyError("TIMEOUT", "Git operation exceeded its time budget.");
       };
       try {
         const project = await policy.authorizeProject(projectName);
+        const target = write ? authorizeWrite(project, operation, input) : undefined;
+        if (writingProjects.has(project.root) || (write && accessingProjects.has(project.root))) {
+          throw new ProjectPolicyError("BUSY", "Another Git operation is in progress for this project.");
+        }
+        accessRoot = project.root;
+        accessingProjects.set(accessRoot, (accessingProjects.get(accessRoot) || 0) + 1);
+        if (write) { writingRoot = project.root; writingProjects.add(writingRoot); }
         checkDeadline();
         const before = await inspectGitRepository(project, { checkDeadline, maxEntries: limits.maxEntries });
         const currentExecutable = await inspectGitExecutable(trusted.executable);
         if (!sameIdentity(trusted.stat, currentExecutable.stat) || trusted.stat.size !== currentExecutable.stat.size ||
             trusted.stat.mtimeNs !== currentExecutable.stat.mtimeNs) throw new ProjectPolicyError("GIT_CHANGED", "Trusted Git executable changed.");
         let outputBytes = 0;
-        const invoke = async (command) => {
+        const invoke = async (command, transport, identityRole) => {
           checkDeadline();
-          const result = await runChild(trusted.executable, [...fixedGitArguments(project.root), ...command],
-            { cwd: project.root, env: createGitEnvironment(project.root) },
-            { timeoutMs: Math.max(1, Math.floor(deadline - performance.now())), maxOutputBytes: limits.maxOutputBytes - outputBytes });
+          if (write) {
+            const current = await policy.authorizeProject(projectName);
+            const currentTarget = authorizeWrite(current, operation, input);
+            if (JSON.stringify(currentTarget) !== JSON.stringify(target)) throw new ProjectPolicyError("PUSH_TARGET_NOT_AUTHORIZED", "Push grant changed during execution.");
+          }
+          checkDeadline();
+          const result = await runChild(trusted.executable, [...fixedGitArguments(project.root, { write }), ...command],
+            { cwd: project.root, env: { ...createGitEnvironment(project.root),
+              ...(transport ? { GIT_ALLOW_PROTOCOL: transport } : {}) } },
+            { timeoutMs: Math.max(1, Math.floor(deadline - performance.now())), maxOutputBytes: limits.maxOutputBytes - outputBytes,
+              classifyFailures: operation === "push", processTree: Boolean(transport), identityRole });
           outputBytes += result.outputBytes;
           return result.stdout;
         };
@@ -102,16 +161,28 @@ export async function createGitExecutor({ policy, gitExecutable, limits: overrid
         if (index.subarray(0, 7).toString() === "160000 " || index.includes(Buffer.from("\0" + "160000 "))) {
           throw new ProjectPolicyError("UNSUPPORTED_REPOSITORY", "Submodule index entries are not supported.");
         }
-        const stdout = await invoke(COMMANDS[operation]);
+        const result = write ? await executeGitWrite({ operation, input, project, target, invoke,
+          inspection: { checkDeadline, maxEntries: limits.maxEntries },
+          markMutation: () => { mutationAttempted = true; } }) : undefined;
+        const stdout = write ? undefined : await invoke(COMMANDS[operation]);
         const current = await policy.authorizeProject(projectName);
         const after = await inspectGitRepository(current, { checkDeadline, maxEntries: limits.maxEntries });
         if (!sameIdentity(before.gitIdentity, after.gitIdentity) || before.config !== after.config ||
-            JSON.stringify(before.branch) !== JSON.stringify(after.branch)) {
+            (operation === "commit" ? before.branch.name !== after.branch.name || before.branch.detached !== after.branch.detached
+              : JSON.stringify(before.branch) !== JSON.stringify(after.branch))) {
           throw new ProjectPolicyError("REPOSITORY_CHANGED", "Git metadata changed during access.");
         }
         checkDeadline();
-        return { stdout, branch: before.branch };
+        return { stdout, branch: after.branch, result };
+      } catch (error) {
+        if (write && mutationAttempted) error.mutationMayHaveOccurred = true;
+        throw error;
       } finally {
+        if (writingRoot) writingProjects.delete(writingRoot);
+        if (accessRoot) {
+          const remaining = accessingProjects.get(accessRoot) - 1;
+          if (remaining) accessingProjects.set(accessRoot, remaining); else accessingProjects.delete(accessRoot);
+        }
         activeOperations--;
         active--;
       }

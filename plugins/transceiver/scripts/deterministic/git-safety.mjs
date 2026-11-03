@@ -21,10 +21,10 @@ export function createGitEnvironment(root) {
   return env;
 }
 
-export function fixedGitArguments(root) {
+export function fixedGitArguments(root, { write = false } = {}) {
   return ["--no-pager", "--no-optional-locks", `--git-dir=${path.join(root, ".git")}`, `--work-tree=${root}`,
     "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false", "-c", "core.preloadIndex=false",
-    "-c", `core.hooksPath=${NULL_DEVICE}`, "-c", `core.attributesFile=${NULL_DEVICE}`,
+    ...(write ? [] : ["-c", `core.hooksPath=${NULL_DEVICE}`]), "-c", `core.attributesFile=${NULL_DEVICE}`,
     "-c", `core.excludesFile=${NULL_DEVICE}`, "-c", "core.quotePath=true", "-c", "core.pager=",
     "-c", "diff.external=", "-c", "diff.renames=false", "-c", "color.ui=false",
     "-c", "protocol.allow=never", "-c", "maintenance.auto=false", "-c", "gc.auto=0"];
@@ -32,10 +32,10 @@ export function fixedGitArguments(root) {
 
 // This is a small accepted subset, not a general Git config parser. Every other
 // syntax/section/key is rejected BEFORE starting Git (including includes).
-function checkLocalConfig(text) {
+export function checkLocalConfig(text, bare = false) {
   const core = {
     repositoryformatversion: /^(?:0)$/,
-    bare: /^false$/i,
+    bare: bare ? /^true$/i : /^false$/i,
     filemode: /^(true|false)$/i,
     logallrefupdates: /^(true|false)$/i,
     symlinks: /^(true|false)$/i,

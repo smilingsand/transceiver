@@ -15,13 +15,15 @@ async function registered(t, result = { ok: true, content: "fixture data" }) {
   return { client: await memoryClient(t, server), calls };
 }
 
-test("registerTool publishes three strict bounded schemas and read-only annotations", async (t) => {
+test("registerTool publishes six strict bounded schemas with separate write annotations", async (t) => {
   const { client } = await registered(t);
   const { tools } = await client.listTools();
   assert.deepEqual(tools.map((tool) => tool.name), NEW_TOOLS);
   for (const tool of tools) {
     assert.equal(tool.inputSchema.additionalProperties, false);
-    assert.deepEqual(tool.annotations, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+    const write = ["git_add", "git_commit", "git_push"].includes(tool.name);
+    assert.deepEqual(tool.annotations, { readOnlyHint: !write, destructiveHint: write,
+      idempotentHint: tool.name !== "git_commit", openWorldHint: tool.name === "git_push" });
     for (const forbidden of ["root", "cwd", "gitExecutable", "command", "env", "ref", "limits"]) {
       assert.equal(tool.inputSchema.properties[forbidden], undefined);
     }
@@ -33,7 +35,10 @@ test("unknown fields, modes and out-of-range lines are rejected before service i
   for (const [name, args] of [["read_project_file", { project: "demo", path: "x", lineCount: 501 }],
     ["read_project_file", { project: "demo", path: "x", startLine: 0 }],
     ["git_diff", { project: "demo", mode: "HEAD" }], ["git_status", { project: "demo", root: "/" }],
-    ["git_diff", { project: "demo", mode: "staged", env: {} }]]) {
+    ["git_diff", { project: "demo", mode: "staged", env: {} }],
+    ["git_add", { project: "demo", paths: [] }], ["git_add", { project: "demo", paths: ["x"], all: true }],
+    ["git_commit", { project: "demo", message: "" }], ["git_commit", { project: "demo", message: "x", amend: true }],
+    ["git_push", { project: "demo", remote: "origin" }], ["git_push", { project: "demo", remote: "origin", branch: "main", force: true }]]) {
     const result = await client.callTool({ name, arguments: args });
     assert.equal(result.isError, true);
   }
@@ -47,7 +52,10 @@ test("successful data and failure preview survive MCP content and structuredCont
     const { client, calls } = await registered(t, data);
     for (const name of NEW_TOOLS) {
       const args = name === "read_project_file" ? { project: "demo", path: "x" }
-        : name === "git_diff" ? { project: "demo", mode: "staged" } : { project: "demo" };
+        : name === "git_diff" ? { project: "demo", mode: "staged" }
+          : name === "git_add" ? { project: "demo", paths: ["x"] }
+            : name === "git_commit" ? { project: "demo", message: "fixture" }
+              : name === "git_push" ? { project: "demo", remote: "origin", branch: "main" } : { project: "demo" };
       const result = await client.callTool({ name, arguments: args });
       assert.deepEqual(result.structuredContent, data);
       assert.deepEqual(JSON.parse(result.content[0].text), data);
@@ -61,7 +69,8 @@ test("service exceptions are sanitized and missing services fail initialization"
   assert.throws(() => registerDeterministicTools({}, {}), /initialized FileTools and GitTools/);
   const server = new McpServer({ name: "exception-test", version: "1.0.0" });
   const fail = async () => { throw new Error("private fixture path"); };
-  registerDeterministicTools(server, { fileTools: { read_project_file: fail }, gitTools: { git_status: fail, git_diff: fail } });
+  registerDeterministicTools(server, { fileTools: { read_project_file: fail },
+    gitTools: Object.fromEntries(NEW_TOOLS.filter((name) => name.startsWith("git_")).map((name) => [name, fail])) });
   const client = await memoryClient(t, server);
   const result = await client.callTool({ name: "git_status", arguments: { project: "demo" } });
   assert.equal(result.isError, true);

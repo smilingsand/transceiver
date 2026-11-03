@@ -185,6 +185,8 @@ ChatGPT 连接器与安装在 Codex 中的本地插件是两个不同操作。�
 
 `git_status` 使用 `{"project":"example-project"}`；`git_diff` 还需 `mode`，取 `unstaged` 或 `staged`。结果可能被截断或超时，检查 `ok`、`complete`、`truncated`、`timedOut` 等返回字段。未跟踪文件不会包含在普通 diff 中，需要单独读取。以上工具均不创建 Codex 任务。
 
+确定性 MCP 工具 `git_add`、`git_commit`、`git_push` 需要用户授权以及分别配置的服务端 `gitWrite` 权限，默认均为 false。提交需要仓库本地身份并拒绝活动 hooks；推送须精确授权 remote URL/branch，仅支持本地 bare 或无凭据 HTTPS，不支持 SSH、凭据管理器及私有 GitHub 认证推送。提交前审查整个暂存区。配置、示例和恢复方法见[受控 Git 写入工具](docs/Git-Write-Tools-BRIDGE-LAB-CN.md)。
+
 ### 任务、模型和生命周期
 
 先通过 `codex_settings` 和 `codex_models` 检查当前默认值与可用模型。新任务使用 `codex_task`，选择授权的绝对 `cwd`、`read-only` sandbox 和 `sessionMode: new`；为一个逻辑请求使用唯一 UUID 格式 `requestId`。提交后记录返回的 Job、Thread 和 Activity 标识，并用 `codex_status` 查询至终态。任务仍运行时不要仅凭工具调用超时认定失败。

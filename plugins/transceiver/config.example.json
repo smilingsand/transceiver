@@ -6,6 +6,12 @@
       "name": "included-project",
       "sync": true,
       "allowCodexTasks": true,
+      "gitWrite": {
+        "add": false,
+        "commit": false,
+        "push": false,
+        "pushTargets": []
+      },
       "chatgptUrl": "https://chatgpt.com/c/example"
     },
     "/absolute/path/to/excluded-project": {

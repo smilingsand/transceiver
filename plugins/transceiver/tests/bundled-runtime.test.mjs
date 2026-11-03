@@ -199,10 +199,10 @@ acceptance("new Windows bundle passes isolated HTTP, deterministic calls, Fake s
   let client = await connect(child);
   const summary = { directory: run.directory, outsideCwd: path.dirname(WORKSPACE), ports: [new URL(child.url).port] };
   const wire = JSON.parse(await fs.readFile(path.join(AUDIT, "old-wire-baseline.json"), "utf8"));
-  await t.test("12 unique tools and original definitions/resources/instructions match old bundle", async () => {
+  await t.test("15 unique tools and original definitions/resources/instructions match old bundle", async () => {
     const tools = (await client.listTools()).tools;
-    assert.equal(tools.length, 12);
-    assert.equal(new Set(tools.map((tool) => tool.name)).size, 12);
+    assert.equal(tools.length, 15);
+    assert.equal(new Set(tools.map((tool) => tool.name)).size, 15);
     assert.deepEqual(tools.filter((tool) => ORIGINAL_TOOLS.includes(tool.name)), wire.tools);
     assert.equal(client.getInstructions(), wire.instructions);
     assert.deepEqual(client.getServerCapabilities(), wire.capabilities);

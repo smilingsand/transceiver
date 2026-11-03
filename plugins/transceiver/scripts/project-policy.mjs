@@ -48,6 +48,23 @@ export async function inspectProjectRoot(root) {
 
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
+function gitWritePolicy(value) {
+  if (value === undefined) return Object.freeze({});
+  if (!isRecord(value) || Object.keys(value).some((key) => !["add", "commit", "push", "pushTargets"].includes(key)) ||
+      ["add", "commit", "push"].some((key) => value[key] !== undefined && typeof value[key] !== "boolean") ||
+      (value.pushTargets !== undefined && (!Array.isArray(value.pushTargets) || value.pushTargets.length > 50 ||
+        value.pushTargets.some((target) => !isRecord(target) ||
+          Object.keys(target).some((key) => !["remote", "url", "branches"].includes(key)) ||
+          typeof target.remote !== "string" || !target.remote || target.remote.length > 200 ||
+          typeof target.url !== "string" || !target.url || target.url.length > 2048 ||
+          !Array.isArray(target.branches) || !target.branches.length || target.branches.length > 100 ||
+          target.branches.some((branch) => typeof branch !== "string" || !branch || branch.length > 200))))) {
+    throw new ProjectPolicyError("INVALID_CONFIG", "Invalid gitWrite policy.");
+  }
+  return Object.freeze({ ...value, pushTargets: Object.freeze((value.pushTargets || []).map((target) =>
+    Object.freeze({ ...target, branches: Object.freeze([...target.branches]) }))) });
+}
+
 // Config is trusted server configuration, not a client-supplied tool argument.
 // Bound it independently of project file limits; never create a missing config.
 export async function loadAuthorizedProjects(configPath) {
@@ -77,6 +94,7 @@ export async function loadAuthorizedProjects(configPath) {
   }
   const projects = [];
   for (const [configuredRoot, project] of Object.entries(config.projects)) {
+    const gitWrite = gitWritePolicy(project?.gitWrite);
     if (!isRecord(project) || ["sync", "allowCodexTasks"].some((key) =>
       project[key] !== undefined && typeof project[key] !== "boolean") ||
       (project.name !== undefined && (typeof project.name !== "string" || !project.name.trim() || project.name.length > 200))) {
@@ -90,7 +108,7 @@ export async function loadAuthorizedProjects(configPath) {
       other.name === name || within(root, other.root) || within(other.root, root))) {
       throw new ProjectPolicyError("INVALID_CONFIG", "Enabled project names and roots must be unique and non-overlapping.");
     }
-    projects.push(Object.freeze({ name, root, identity: Object.freeze(identity) }));
+    projects.push(Object.freeze({ name, root, identity: Object.freeze(identity), gitWrite }));
   }
   return Object.freeze(projects);
 }

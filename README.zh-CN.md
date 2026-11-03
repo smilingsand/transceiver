@@ -4,6 +4,8 @@
 > Windows Bridge Lab fork 首次使用请参阅 [六步快速开始](QuickStart-BRIDGE-LAB-CN.md)（[English](QuickStart-BRIDGE-LAB.md)），使用 `dev/bridge-lab` 分支。以下保留上游安装方式。
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+> Bridge Lab 提供默认关闭的 Git 写入工具，参见[受控 Git 写入](docs/Git-Write-Tools-BRIDGE-LAB-CN.md)。
+
 > **Bridge Lab fork：**下文安装步骤和只读、禁网描述针对上游打包版本，不代表 Windows 控制器当前源码运行方式。控制器默认使用根目录本机配置及 `<repo>\runtime`；实际权限和网络访问取决于配置与环境，详见 [Bridge Lab 中文手册](README-BRIDGE-LAB-CN.md)。
 
 Transceiver 是连接指定 Codex 项目与 ChatGPT 的双向交接层，双方都可以向对方发起任务并取回结果。从 Codex 出发，它把项目进度、阻塞、计划变更或咨询请求整理成带有来源标记和 request ID 的可追踪请求，通过已有的 Web transport 发送到已映射或新建的 ChatGPT 对话，再把返回的调研、分析或计划修订结果保存到本地工作流中。从 ChatGPT 出发，它通过私有 MCP 连接，在明确授权的项目根目录下启动、继续、引导、检查或停止只读且禁用网络的 Codex 任务，并把状态和结果返回当前对话。

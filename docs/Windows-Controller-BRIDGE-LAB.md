@@ -6,6 +6,8 @@ The [controller](../scripts/bridge-lab.ps1) starts, inspects and stops its manag
 
 The controller does not create projects, Tunnels, profiles or account permissions. A running Bridge does not reload changed project configuration on another `start`: restart managed components when tasks are idle and check `codex_settings` `capabilities.allowedRoots`. This is a cwd policy, not an OS read whitelist.
 
+For deterministic Git writes, `ConfigPath` selects project policy: each `gitWrite` operation defaults to false, and push also requires an exact URL/branch grant. Existing authorized roots reload these flags before subprocesses; new or rebound roots require recreating host policy. Configuration and connector prompts do not replace user authorization. See [Git write setup, transport limits and Bridge-only rollout](Git-Write-Tools-BRIDGE-LAB.md).
+
 ## Parameters and prerequisites
 
 The script resolves the repository root from its own location. Explicit arguments override root `bridge.env`, then script defaults. Paths and relative tool paths resolve against the repository root; bare `NODE_EXE=node.exe` resolves through PATH.

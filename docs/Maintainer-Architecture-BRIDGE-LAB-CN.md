@@ -6,7 +6,7 @@
 
 Windows 控制器启动 [reverse-runtime.mjs](../plugins/transceiver/scripts/reverse-runtime.mjs)。它从项目配置选取同时启用 `sync` 和 `allowCodexTasks` 的项目，建立上游 Codex 后端池和路由，再交给 [reverse-http.mjs](../plugins/transceiver/scripts/reverse-http.mjs) 装配 HTTP 服务。Tunnel 是外部客户端，转发到本地 `/mcp`；`/healthz` 只检查本地服务。
 
-HTTP 层对每个 POST 创建 MCP Server 和无状态 transport，先调用上游工厂，再注册 `read_project_file`、`git_status`、`git_diff`。这样原有工具与新增工具由同一个端点提供，无须维护另一套 MCP 代理的初始化、资源、通知和错误转发语义。确定性工具直接调用本地服务，不需要创建 Codex 任务。
+HTTP 层对每个 POST 创建 MCP Server 和无状态 transport，先调用上游工厂，再注册 `read_project_file`、`git_status`、`git_diff`、`git_add`、`git_commit`、`git_push`。这样原有工具与新增工具由同一个端点提供，无须维护另一套 MCP 代理的初始化、资源、通知和错误转发语义。确定性工具直接调用本地服务，不需要创建 Codex 任务。
 
 每个 HTTP 服务只创建一组 state store、session、job、model catalog、settings 和 scope resolver，并显式传给每次创建的 MCP Server。请求结束关闭该请求的 server 和 transport，HTTP 服务关闭时才关闭共享 state store。若依赖工厂默认值而逐请求重建注册表或 scope 状态，跨请求的会话连续性可能受损。线程到项目的映射另由 runtime 写入状态目录；持久状态与 ChatGPT 对话历史、Desktop 显示不是同一份数据。
 
@@ -16,7 +16,7 @@ HTTP 层对每个 POST 创建 MCP Server 和无状态 transport，先调用上�
 
 - 项目策略使用服务端配置而非客户端传入的根路径；读取和 Git 操作重新检查授权。文件工具只接受项目内相对路径、普通 UTF-8 文本，拒绝遍历、链接和不受支持的路径；默认文件上限 1 MiB、返回上限 64 KiB、每次最多 500 行。应检查 `ok`、`truncated` 和行范围。
 - 路径组件和文件身份检查降低链接逃逸及替换风险，但源码明确指出这不是针对恶意本地写入者的原子遍历，尤其在 Windows 上。授权根目录也不是 Codex 进程的操作系统级隔离；实际权限仍受 sandbox 和宿主环境约束。
-- Git 工具仅提供固定的 status 与 staged/unstaged diff，不接受任意命令或 ref；使用可信的绝对 Git 路径、无 shell 子进程、最小环境和固定参数，并禁用外部 diff、textconv、hooks 等入口。Windows 要求原生 Git for Windows 的 `mingw*/bin/git.exe`，且 Git 版本至少 2.45。
+- Git 工具提供固定的 status、staged/unstaged diff 及默认关闭的独立 Add/Commit/Push，不接受任意命令或 ref；使用可信的绝对 Git 路径、无 shell 子进程、最小环境和固定参数，并限制外部 diff、textconv 等入口；只读操作禁用 Hooks，写操作拒绝活动 Hooks，不静默绕过。权限与 Push 范围见[受控 Git 写入工具](Git-Write-Tools-BRIDGE-LAB-CN.md)。Windows 要求原生 Git for Windows 的 `mingw*/bin/git.exe`，且 Git 版本至少 2.45。
 - 为限制 Git 读取范围，当前实现只接受项目顶层内的普通 `.git` 目录和受限配置，拒绝链接、嵌套仓库、子模块、linked worktree、alternates、浅克隆及 promisor 等不支持的结构。这些拒绝可能影响正常仓库，不能简单关闭检查以获得结果。Git 操作有时间、输出、扫描数量和并发上限；status 超限不返回部分状态，diff 截断时明确标记不完整。未跟踪文件内容不包含在普通 diff 中。
 
 源码入口绑定 loopback 并关闭本地 HTTP 认证，依赖本机与 Tunnel 的访问边界；它还关闭上游按文件名的秘密扫描。凭据和敏感状态应放在受保护的仓库外位置，不应把这些限制误认为通用秘密检测或完整安全沙箱。修改网络暴露、凭据处理或权限边界前须先取得授权。
