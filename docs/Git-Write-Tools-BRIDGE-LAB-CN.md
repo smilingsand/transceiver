@@ -1,4 +1,4 @@
-# 受控 Git 写入工具 — T5.7
+# 受控 Git 写入工具 — T5.8
 
 [English](Git-Write-Tools-BRIDGE-LAB.md)
 
@@ -74,7 +74,7 @@
 
 安排仅重启 Bridge 后，刷新 MCP 工具发现，再对明确授权的分支调用 `git_push`，检查 `ok` 和 `result`；失败时重试前检查本地和远程状态。Bridge 账户须已有可非交互使用的 GitHub 凭据；必要时先通过普通本地流程单独登录。离线测试使用假助手，不能证明真实 GitHub 认证成功。
 
-本次上线中，用户报告启用 `githubGcm` 并重启 Bridge 后，`git_push` 返回 `up-to-date`。这次调用没有创建或更新远程提交，不能单独证明 GCM 已完成认证写入；仍需推送用户授权的新提交并检查结果，才能验证认证写入。
+在 T5.8 阶段，我们使用确定性 MCP 工具 `git_push`，通过 Windows Git Credential Manager 成功完成了真实的 GitHub 推送。工具返回 `ok: true`、`result: "updated"`，确认已授权的远程分支成功更新，整个 Git 推送过程无需调用 Codex。这验证了该 Windows 测试环境下 GitHub 推送工作流的端到端可用性，但不代表其他环境也已通过相同验证。
 
 1. `git_status` 检查现有修改，记录原先暂存的内容。
 2. `git_diff` 使用 `mode: "unstaged"`；新增文件需另行读取。

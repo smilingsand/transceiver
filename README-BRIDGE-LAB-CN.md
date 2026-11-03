@@ -235,4 +235,7 @@ Codex Desktop 可按 `cwd` 将外部 Thread 归入已添加的对应本地项目
 - [Windows 控制器参考](docs/Windows-Controller-BRIDGE-LAB-CN.md)：参数、进程识别、恢复行为及历史验证范围。
 - [reverse Bridge 技能参考](plugins/transceiver/skills/transceiver/references/reverse-bridge.md)、[第三方声明](plugins/transceiver/THIRD_PARTY_NOTICES.md)。
 
-本 fork 保留上游作者及贡献归属，项目采用 [AGPL-3.0](LICENSE)；使用、修改及分发时请同时遵守相关第三方许可。
+
+Bridge Lab 是基于原版 [Transceiver](https://github.com/mark9804/transceiver) 开发、独立维护的增强版本。本项目在保留原版核心架构的基础上，增加了 Windows 环境支持、可写 Codex 开发任务、独立 MCP 文件与 Git 操作工具，以及 GitHub 自动推送等功能。
+
+感谢 Transceiver 原作者及贡献者的工作。本项目保留上游版权声明及贡献归属，继续采用 [GNU Affero General Public License v3.0（AGPL-3.0）](LICENSE) 开源许可。使用、修改和分发时，请同时遵守适用的第三方许可证。

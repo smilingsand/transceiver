@@ -74,7 +74,7 @@ Policy reloads before subprocesses; revocation blocks later steps, not already-s
 
 After a scheduled Bridge-only restart, refresh MCP discovery and test the exact authorized branch with `git_push`. Check `ok` and `result`; on failure inspect local and remote state before retrying. The Bridge account must already have usable non-interactive GitHub credentials; sign in separately through the normal local workflow if necessary. The offline tests use synthetic helpers and do not demonstrate authentication against GitHub.
 
-For this rollout, the user reports that `git_push` returned `up-to-date` after enabling `githubGcm` and restarting Bridge. This did not create or update a remote commit and does not by itself prove that GCM authenticated a write. Verification of an authenticated write remains pending a user-authorized push of a new commit and inspection of the result.
+During the T5.8 rollout, an authenticated GitHub push was successfully completed using the deterministic `git_push` MCP tool with Windows Git Credential Manager. The tool returned `ok: true` and `result: "updated"`, confirming that the authorized remote branch was updated without invoking Codex. This verifies the end-to-end GitHub push workflow in the tested Windows environment; it does not guarantee equivalent behavior in other environments.
 
 1. `git_status` to inspect existing changes, including pre-existing staging.
 2. `git_diff` with `mode: "unstaged"`; read untracked files separately.

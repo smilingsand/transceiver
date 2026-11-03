@@ -6,6 +6,7 @@
 /proj-info/
 /codex/
 .transceiver/
+/media/
 
 # Local environment files (keep examples)
 .env
