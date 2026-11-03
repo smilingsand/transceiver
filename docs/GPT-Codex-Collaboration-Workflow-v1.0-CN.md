@@ -72,7 +72,7 @@ Codex 的报告是线索；文件和 Git 差异显示当前实际改动，测试
 
 ## 受控 Git 写入
 
-用户授权相应操作后，连接器可直接调用确定性 `git_add`、`git_commit`、`git_push`，无需创建 Codex 任务。服务端各项 `gitWrite` 权限默认均为 false，配置权限本身不代表用户批准。先检查状态和未暂存差异、读取未跟踪文件，再指定路径暂存，审查整个暂存区后提交。提交需要仓库本地身份并拒绝活动 hooks；推送还需精确授权 remote URL/branch，仅支持本地 bare 或无凭据 HTTPS，不支持 SSH、凭据管理器或私有 GitHub 认证推送。参见 [MCP 示例、策略和恢复方法](Git-Write-Tools-BRIDGE-LAB-CN.md)。
+用户授权相应操作后，连接器可直接调用确定性 `git_add`、`git_commit`、`git_push`，无需创建 Codex 任务。服务端各项 `gitWrite` 权限默认均为 false，配置权限本身不代表用户批准。先检查状态和未暂存差异、读取未跟踪文件，再指定路径暂存，审查整个暂存区后提交。提交需要仓库本地身份并拒绝活动 hooks；推送还需精确授权 remote URL/branch，GitHub HTTPS 可额外选择启用 Windows GCM，不支持 SSH。参见 [MCP 示例、策略和恢复方法](Git-Write-Tools-BRIDGE-LAB-CN.md)。
 
 ## 工作原理与基本概念
 

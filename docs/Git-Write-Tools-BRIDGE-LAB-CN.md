@@ -39,6 +39,7 @@
         "add": true,
         "commit": true,
         "push": true,
+        "githubGcm": true,
         "pushTargets": [
           {
             "remote": "origin",
@@ -58,16 +59,21 @@
 
 ## 安全范围及限制
 
-- 复用可信 Git 绝对路径、根目录身份检查、项目顶层普通 `.git`、严格配置子集、无 Shell 拼接参数和最小环境。不继承全局/系统配置、`GIT_*`、PATH 或凭据环境。拒绝 Includes、Aliases、Filters、外部 Diff/Textconv、签名程序和凭据管理器配置，不自动改写。
+- 复用可信 Git 绝对路径、根目录身份检查、项目顶层普通 `.git`、严格配置子集和最小环境。Git 由进程接口直接启动；启用的助手由 Git 的助手 Shell 按下述限制调用。不继承全局/系统配置、`GIT_*`、PATH 或凭据环境。拒绝 Includes、Aliases、Filters、外部 Diff/Textconv、签名程序和本地凭据管理器配置，不自动改写。
 - 写操作发现 `.git/hooks` 活动文件就返回 `HOOKS_NOT_SUPPORTED`，`*.sample` 惰性文件除外。失败的 pre-commit Hook 同样在执行 Hook 或创建 Commit **之前拒绝**，不会运行或静默跳过。需要 Hooks 的流程请本地完成。Linked Worktree、嵌套仓库、Submodule、浅克隆、Promisor、共享元数据和链接仍不支持。
 - Commit 检查**整个暂存区**，不依赖 `.gitignore`；Add 同时检查选中目录的后代。`.env*`、`bridge.env`、`config.json`、Credentials/Secrets、私钥、`.npmrc`、`.pypirc`、`.aws`、`.ssh`、`proj-info` 和 `codex` 等会被阻止（`SENSITIVE_STAGED_PATH`）。这是保守文件名规则，可能阻止无害示例，不是秘密内容扫描；提交/推送前仍需审查完整暂存 Diff 和新增文件。
-- Push 支持不含用户凭据、Query、Fragment 的规范 HTTPS URL，禁用重定向，不支持 SSH、自定义传输及凭据管理器。**需要认证的私有 GitHub Push 不在 T5.7 支持范围内**，通常返回 `AUTHENTICATION_FAILED`。不要把 Token 填入 URL 或参数。后续凭据接入需单独审阅设计。
+- Push 支持不含用户凭据、Query、Fragment 的规范 HTTPS URL，禁用重定向，不支持 SSH 和自定义传输。`githubGcm` 默认关闭；启用后仅精确授权的 `https://github.com/...` 推送可使用可信 Git for Windows 原生 Git 同目录的 GCM，其他 HTTPS 主机不会使用该助手。Git 安装及其依赖须可信且受本机权限保护。Git 会通过助手 Shell 调用固定且校验过的路径，不接受配置传入的任意助手。GCM 使用 `GCM_INTERACTIVE=0`、`GIT_TERMINAL_PROMPT=0`、GitHub provider 和 Windows Credential Manager；它可能读取、保存或删除凭据条目。不要把 Token 放入 URL 或参数。
+- 仅对启用认证的推送，`PATH` 指向可信 Git 的 bin 目录；`USERPROFILE`、`APPDATA`、`LOCALAPPDATA` 为绝对路径时按需传入。`HOME` 仍隔离，系统/全局 Git 配置及继承的 Git/GCM 环境变量仍被禁用。认证依赖 Bridge 的 Windows 账户、凭据、权限、网络和 GCM 安装。`CREDENTIAL_UNAVAILABLE` 表示固定助手不可用或路径不支持；`AUTHENTICATION_REQUIRED` 表示需要凭据或交互；`AUTHENTICATION_FAILED` 表示认证/访问被拒（包括 HTTP 401/403）。这些分类不能证明凭据存储状态。
 - 支持明确授权的本地绝对 Bare 目录，用于离线流程。Receive-Pack 前检查目标配置、元数据、链接和活动 Hooks；拒绝 UNC 及普通非 Bare 目标。URL 授权意味着允许写入该目标。HTTPS 远端仍可按自身策略拒绝推送。
 - 每个请求的全部子进程共享 10 秒期限、1 MiB stdout/stderr 预算；响应上限 64 KiB，扫描上限 20,000 条目，全局并发最多 4。进程内项目写锁阻止工具重叠访问。不返回原始 Git stderr/传输文本。错误区分授权、参数/路径、仓库不支持、认证、网络、Non-fast-forward、远程拒绝、超时和输出超限。
 - 这不是进程树沙箱，也不对恶意本地并发写入提供原子防护；应使用可信、空闲的仓库，OS 权限仍是外层边界。HTTPS 远端 Hooks 按远端自身策略执行。
 - 检查 `ok`、`complete`、`truncated`、`timedOut`。尝试写入后的错误带有 `mutationMayHaveOccurred: true`；超时、输出超限、后验失败或断线不代表回滚。重试前检查 Status、暂存 Diff、本地 HEAD 及远端状态。
 
 ## 典型流程、测试与上线
+
+安排仅重启 Bridge 后，刷新 MCP 工具发现，再对明确授权的分支调用 `git_push`，检查 `ok` 和 `result`；失败时重试前检查本地和远程状态。Bridge 账户须已有可非交互使用的 GitHub 凭据；必要时先通过普通本地流程单独登录。离线测试使用假助手，不能证明真实 GitHub 认证成功。
+
+本次上线中，用户报告启用 `githubGcm` 并重启 Bridge 后，`git_push` 返回 `up-to-date`。这次调用没有创建或更新远程提交，不能单独证明 GCM 已完成认证写入；仍需推送用户授权的新提交并检查结果，才能验证认证写入。
 
 1. `git_status` 检查现有修改，记录原先暂存的内容。
 2. `git_diff` 使用 `mode: "unstaged"`；新增文件需另行读取。
@@ -77,6 +83,6 @@
 
 离线检查：在 `plugins/transceiver` 执行 `npm test`（先重建分发包，再运行全部 Node 测试）；在根目录执行 `pwsh -NoProfile -File ./scripts/bridge-lab.Tests.ps1` 和 `git diff --check`。临时夹具和 Bare Remote 均在仓库内，不向 GitHub 推送。真实 HTTP MCP 写入测试验证模型调用数为零。不操作真实服务、配置或私有 Runtime。
 
-源码/控制器入口需要**仅重启 Bridge**才能加载新代码；分发包入口（`npm run reverse:start`）还需先执行 `npm run build:reverse`。不要重启 Tunnel。由操作者安排重启后刷新连接器工具发现，核对三个严格 Schema，先验证默认拒绝，再仅为可丢弃项目和明确本地 Bare 目标启用权限并复现流程。生产认证推送留待后续，不要关闭配置/辅助程序检查来规避限制。
+源码/控制器入口需要**仅重启 Bridge**才能加载新代码；分发包入口（`npm run reverse:start`）还需先执行 `npm run build:reverse`。不要重启 Tunnel。由操作者安排重启后刷新连接器工具发现，核对三个严格 Schema，先验证默认拒绝，再启用所需的精确授权。
 
 控制器 `stop` 会停止**两个**组件，本次上线不要使用。先以现有实例相同的配置/Runtime 参数运行 `./scripts/bridge-lab.ps1 -Action status`，核实受管 Bridge PID、可执行文件、命令行及创建时间；再由操作者执行 `Stop-Process -Id <已核实的Bridge-PID>`，随后以相同参数执行 `./scripts/bridge-lab.ps1 -Action start`。控制器会保留身份匹配且仍运行的 Tunnel，仅启动缺失的 Bridge。这些命令只是后续操作说明，本次开发及离线测试不会对真实实例执行。

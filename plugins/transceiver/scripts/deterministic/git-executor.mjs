@@ -2,7 +2,7 @@ import childProcess from "node:child_process";
 import { performance } from "node:perf_hooks";
 import path from "node:path";
 import { ProjectPolicyError, sameIdentity } from "../project-policy.mjs";
-import { createGitEnvironment, fixedGitArguments, inspectGitExecutable, inspectGitRepository } from "./git-safety.mjs";
+import { createGitEnvironment, fixedGitArguments, inspectGitCredentialManager, inspectGitExecutable, inspectGitRepository } from "./git-safety.mjs";
 import { authorizeWrite, validateWriteInput, WRITE_OPERATIONS } from "./git-write-policy.mjs";
 import { executeGitWrite } from "./git-write-operations.mjs";
 
@@ -76,10 +76,16 @@ function runChild(executable, args, options, budget) {
         // transport/helper messages may contain URLs or credentials.
         const diagnostic = Buffer.concat([...stderr, ...stdout]).toString("utf8");
         const category = /non-fast-forward|fetch first|stale info/iu.test(diagnostic) ? "NON_FAST_FORWARD"
-          : /authentication failed|could not read Username|terminal prompts disabled|401|403/iu.test(diagnostic) ? "AUTHENTICATION_FAILED"
+          : /could not read (?:username|password)|terminal prompts disabled|(?:cannot|can't|unable to) prompt|interactivity (?:is |has been )?disabled/iu.test(diagnostic) ? "AUTHENTICATION_REQUIRED"
+          : /authentication failed|\b(?:401|403)\b/iu.test(diagnostic) ? "AUTHENTICATION_FAILED"
           : /could not resolve|unable to access|failed to connect|connection.*(?:closed|refused|timed out)|network is unreachable/iu.test(diagnostic) ? "NETWORK_ERROR"
           : /remote rejected|pre-receive hook declined|permission denied/iu.test(diagnostic) ? "REMOTE_REJECTED" : "GIT_FAILED";
-        reject(new ProjectPolicyError(category, `Git failed (${category}, exit ${code}); inspect local state before retrying.`));
+        const advice = category === "AUTHENTICATION_REQUIRED"
+          ? "The remote requested credentials; check the project's GCM opt-in and existing local authentication. Interactive sign-in is disabled."
+          : category === "AUTHENTICATION_FAILED"
+            ? "The remote rejected authentication or access; check repository access using an authorized local Git workflow."
+            : `Git failed (${category}, exit ${code}); inspect local state before retrying.`;
+        reject(new ProjectPolicyError(category, advice));
       }
       else resolve({ stdout: Buffer.concat(stdout), outputBytes: length });
     });
@@ -139,15 +145,35 @@ export async function createGitExecutor({ policy, gitExecutable, limits: overrid
         let outputBytes = 0;
         const invoke = async (command, transport, identityRole) => {
           checkDeadline();
+          let auth = false;
           if (write) {
             const current = await policy.authorizeProject(projectName);
             const currentTarget = authorizeWrite(current, operation, input);
             if (JSON.stringify(currentTarget) !== JSON.stringify(target)) throw new ProjectPolicyError("PUSH_TARGET_NOT_AUTHORIZED", "Push grant changed during execution.");
+            if ((current.gitWrite.githubGcm === true) !== (project.gitWrite.githubGcm === true)) throw new ProjectPolicyError("GIT_WRITE_NOT_AUTHORIZED", "GitHub authentication policy changed during execution.");
+            auth = Boolean(transport === "https" && current.gitWrite.githubGcm === true &&
+              new URL(target.url).host === "github.com");
+          }
+          let helperArgs = [];
+          let authEnv = {};
+          if (auth) {
+            const helper = await inspectGitCredentialManager(trusted.executable);
+            const checked = await inspectGitCredentialManager(trusted.executable);
+            if (!sameIdentity(helper.stat, checked.stat) || helper.stat.size !== checked.stat.size || helper.stat.mtimeNs !== checked.stat.mtimeNs) {
+              throw new ProjectPolicyError("CREDENTIAL_UNAVAILABLE", "Trusted Credential Manager changed; retry after reviewing the Git installation.");
+            }
+            // Git runs credential helpers via its shell. The canonical path is
+            // restricted to safe characters above; single quotes are forbidden.
+            helperArgs = ["-c", "credential.helper=", "-c", `credential.helper=!'${helper.executable.replaceAll("\\", "/")}' --no-ui`];
+            authEnv = { PATH: path.dirname(trusted.executable), GCM_INTERACTIVE: "0", GCM_PROVIDER: "github", GCM_CREDENTIAL_STORE: "wincredman" };
+            for (const key of ["USERPROFILE", "APPDATA", "LOCALAPPDATA"]) {
+              if (process.env[key] && path.isAbsolute(process.env[key])) authEnv[key] = process.env[key];
+            }
           }
           checkDeadline();
-          const result = await runChild(trusted.executable, [...fixedGitArguments(project.root, { write }), ...command],
+          const result = await runChild(trusted.executable, [...fixedGitArguments(project.root, { write }), ...helperArgs, ...command],
             { cwd: project.root, env: { ...createGitEnvironment(project.root),
-              ...(transport ? { GIT_ALLOW_PROTOCOL: transport } : {}) } },
+              ...(transport ? { GIT_ALLOW_PROTOCOL: transport } : {}), ...authEnv } },
             { timeoutMs: Math.max(1, Math.floor(deadline - performance.now())), maxOutputBytes: limits.maxOutputBytes - outputBytes,
               classifyFailures: operation === "push", processTree: Boolean(transport), identityRole });
           outputBytes += result.outputBytes;

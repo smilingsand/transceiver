@@ -355,3 +355,5 @@ Setup is complete when ChatGPT returns `TRANSCEIVER_WEB_LIVE_OK` and the corresp
 Project policy is stored at `~/.config/transceiver/config.json`. Reverse bridge state is stored under `~/.local/state/transceiver/`. Set `TRANSCEIVER_CONFIG` and `TRANSCEIVER_STATE_DIR` only when testing alternate locations.
 
 Reverse tasks use Codex App Server with read-only access and no network. Their working directory must be under an authorized project root. This directory check selects the project; it is not an operating-system read sandbox. Keep Tunnel credentials outside every authorized project root.
+
+Bridge Lab also offers separately authorized deterministic Git write tools. GitHub HTTPS pushes require an exact remote URL/branch grant and can optionally use Windows GCM; these tools are distinct from the Codex task sandbox. See [controlled Git writes](docs/Git-Write-Tools-BRIDGE-LAB.md).

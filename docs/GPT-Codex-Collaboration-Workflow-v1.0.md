@@ -29,7 +29,7 @@ Ask for actual status, files and Git differences, passed and failed checks, and 
 
 ## Controlled Git writes
 
-When the user authorizes the operation, the connector can call deterministic `git_add`, `git_commit` and `git_push` directly without a Codex task. Each server `gitWrite` grant defaults to false and does not imply user approval. Inspect status and unstaged changes, read untracked files, add explicit paths, review the whole staged diff, then commit. Commit needs repository-local identity and refuses active hooks. Push also needs an exact remote URL/branch grant; only local bare or credential-free HTTPS targets are supported, not SSH, credential managers or authenticated private GitHub pushes. See [MCP examples, policy and recovery](Git-Write-Tools-BRIDGE-LAB.md).
+When the user authorizes the operation, the connector can call deterministic `git_add`, `git_commit` and `git_push` directly without a Codex task. Each server `gitWrite` grant defaults to false and does not imply user approval. Inspect status and unstaged changes, read untracked files, add explicit paths, review the whole staged diff, then commit. Commit needs repository-local identity and refuses active hooks. Push needs an exact remote URL/branch grant; GitHub HTTPS may additionally opt into Windows GCM, while SSH is unsupported. See [MCP examples, policy and recovery](Git-Write-Tools-BRIDGE-LAB.md).
 
 ## Activity, Job and Thread
 

@@ -10,6 +10,7 @@
         "add": false,
         "commit": false,
         "push": false,
+        "githubGcm": false,
         "pushTargets": []
       },
       "chatgptUrl": "https://chatgpt.com/c/example"

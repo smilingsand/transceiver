@@ -50,8 +50,8 @@ const isRecord = (value) => value !== null && typeof value === "object" && !Arra
 
 function gitWritePolicy(value) {
   if (value === undefined) return Object.freeze({});
-  if (!isRecord(value) || Object.keys(value).some((key) => !["add", "commit", "push", "pushTargets"].includes(key)) ||
-      ["add", "commit", "push"].some((key) => value[key] !== undefined && typeof value[key] !== "boolean") ||
+  if (!isRecord(value) || Object.keys(value).some((key) => !["add", "commit", "push", "githubGcm", "pushTargets"].includes(key)) ||
+      ["add", "commit", "push", "githubGcm"].some((key) => value[key] !== undefined && typeof value[key] !== "boolean") ||
       (value.pushTargets !== undefined && (!Array.isArray(value.pushTargets) || value.pushTargets.length > 50 ||
         value.pushTargets.some((target) => !isRecord(target) ||
           Object.keys(target).some((key) => !["remote", "url", "branches"].includes(key)) ||

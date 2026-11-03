@@ -193,3 +193,5 @@ Use the Transceiver connection to run a read-only Codex task with cwd
 项目策略保存在 `~/.config/transceiver/config.json`。reverse bridge 状态保存在 `~/.local/state/transceiver/`。只有测试其他路径时才设置 `TRANSCEIVER_CONFIG` 和 `TRANSCEIVER_STATE_DIR`。
 
 Reverse task 通过 Codex App Server 运行，权限为只读，并且禁用网络。工作目录必须位于已授权的项目根目录下。这个目录检查用于选择项目，不是操作系统级的只读沙箱。Tunnel 凭据必须保存在所有已授权项目根目录之外。
+
+Bridge Lab 还提供单独授权的确定性 Git 写入工具。GitHub HTTPS 推送需要精确授权 remote URL/branch，并可选择启用 Windows GCM；这些工具与 Codex 任务沙箱相互独立。参见[受控 Git 写入工具](docs/Git-Write-Tools-BRIDGE-LAB-CN.md)。

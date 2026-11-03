@@ -144,6 +144,92 @@ test("ordinary push to a granted local bare repository works and reports up-to-d
   assert.equal(success(await f.push()).result, "updated");
 });
 
+test("Git credential approval and rejection invoke helper store and erase", async (t) => {
+  const f = await fixture(t);
+  const log = path.join(f.directory, "helper-calls.txt").split(path.sep).join("/");
+  assert.match(log, /^[A-Za-z0-9_./:-]+$/u);
+  // A fixture-only helper records operations, never credentials. This does not
+  // call GCM, inspect the credential store, or contact any remote server.
+  const helper = `!f() { printf '%s\\n' "$1" >> '${log}'; }; f`;
+  for (const action of ["approve", "reject"]) {
+    const result = childProcess.spawnSync(GIT, ["-c", `credential.helper=${helper}`, "credential", action], {
+      cwd: f.root, env: createGitEnvironment(f.root), shell: false, windowsHide: true,
+      input: "protocol=https\nhost=example.invalid\nusername=fixture\npassword=fixture\n\n", encoding: "utf8", timeout: 5000,
+    });
+    assert.equal(result.status, 0);
+  }
+  assert.deepEqual((await fs.readFile(log, "utf8")).trim().split(/\r?\n/u), ["store", "erase"]);
+});
+
+test("Git invokes a quoted fixture helper path with spaces without exposing its synthetic credential", async (t) => {
+  const f = await fixture(t);
+  const helper = path.join(f.directory, "fixture helper").split(path.sep).join("/");
+  assert.match(helper, /^[A-Za-z0-9_./: -]+$/u);
+  await fs.writeFile(helper, "#!/bin/sh\n[ \"$1\" = --no-ui ] && [ \"$2\" = get ] || exit 3\nprintf 'username=fixture-user\\npassword=fixture-secret\\n'\n", { mode: 0o755 });
+  const result = childProcess.spawnSync(GIT, ["-c", "credential.helper=", "-c", `credential.helper=!'${helper}' --no-ui`, "credential", "fill"], {
+    cwd: f.root, env: { ...createGitEnvironment(f.root), GCM_INTERACTIVE: "0" }, shell: false, windowsHide: true,
+    input: "protocol=https\nhost=example.invalid\n\n", encoding: "utf8", timeout: 5000,
+  });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /password=fixture-secret/u);
+  assert.equal(result.stderr.includes("fixture-secret"), false);
+});
+
+test("GCM opt-in is confined to granted GitHub HTTPS push and passes only fixed helper settings", { skip: process.platform !== "win32" }, async (t) => {
+  const f = await fixture(t);
+  const original = childProcess.spawn;
+  const observed = [];
+  let rejectAuth = false;
+  const mock = t.mock.method(childProcess, "spawn", function (executable, args, options) {
+    if (!args.includes("push")) return original.call(this, executable, args, options);
+    observed.push({ args, options });
+    return fakeProcess((child) => {
+      if (rejectAuth) child.stderr.write("Authentication failed fixture-secret");
+      else child.stdout.write("=\trefs/heads/main:refs/heads/main\t[up to date]\n");
+      child.emit("close", rejectAuth ? 1 : 0);
+    });
+  });
+  try {
+    const url = "https://github.com/example/fixture.git";
+    await git(f.root, ["remote", "set-url", "origin", url]);
+    f.entry.gitWrite.pushTargets[0].url = url; await f.save();
+    success(await f.push());
+    assert.equal(observed.at(-1).args.some((arg) => arg.startsWith("credential.helper=")), false);
+    f.entry.gitWrite.githubGcm = true; await f.save();
+    success(await f.push());
+    const { args, options } = observed.at(-1);
+    assert.ok(args.includes("credential.helper="));
+    assert.equal(args.filter((arg) => arg.startsWith("credential.helper=!")).length, 1);
+    assert.equal(args.find((arg) => arg.startsWith("credential.helper=!")),
+      `credential.helper=!'${path.join(path.dirname(GIT), "git-credential-manager.exe").replaceAll("\\", "/")}' --no-ui`);
+    assert.equal(options.env.GCM_INTERACTIVE, "0");
+    assert.equal(options.env.GCM_CREDENTIAL_STORE, "wincredman");
+    assert.equal(options.env.GIT_TERMINAL_PROMPT, "0");
+    assert.equal(options.env.GIT_CONFIG_GLOBAL, "NUL");
+    assert.equal(options.env.PATH, path.dirname(GIT).replaceAll("/", "\\"));
+    rejectAuth = true;
+    assert.equal(JSON.stringify(failure(await f.push(), "AUTHENTICATION_FAILED")).includes("fixture-secret"), false);
+    rejectAuth = false;
+    const actualLstat = fs.lstat;
+    const missing = t.mock.method(fs, "lstat", async function (file, options) {
+      if (String(file).toLowerCase().endsWith("git-credential-manager.exe")) {
+        const error = new Error("fixture missing"); error.code = "ENOENT"; throw error;
+      }
+      return actualLstat.call(this, file, options);
+    });
+    try { failure(await f.push(), "CREDENTIAL_UNAVAILABLE"); }
+    finally { missing.mock.restore(); }
+    const other = "https://example.invalid/fixture.git";
+    await git(f.root, ["remote", "set-url", "origin", other]);
+    f.entry.gitWrite.pushTargets[0].url = other; await f.save();
+    success(await f.push());
+    assert.equal(observed.at(-1).args.some((arg) => arg.startsWith("credential.helper=")), false);
+    assert.equal(observed.at(-1).options.env.GCM_INTERACTIVE, undefined);
+    f.entry.gitWrite.githubGcm = "yes"; await f.save();
+    failure(await f.push(), "INVALID_CONFIG");
+  } finally { mock.mock.restore(); }
+});
+
 test("push denies invalid names, force/delete/refspec fields, ungranted targets and URL changes", async (t) => {
   const f = await fixture(t);
   for (const extra of [{ remote: "--all" }, { branch: ":main" }, { branch: "+main" }, { branch: "main:other" },
@@ -195,6 +281,7 @@ test("push timeout, output overflow and sanitized failure classifications never 
   const f = await fixture(t);
   const original = childProcess.spawn;
   for (const [diagnostic, code] of [["Authentication failed secret-token", "AUTHENTICATION_FAILED"],
+    ["could not read Username for 'https://secret-token@example.invalid': terminal prompts disabled", "AUTHENTICATION_REQUIRED"],
     ["Could not resolve host secret-token", "NETWORK_ERROR"], ["remote rejected secret-token", "REMOTE_REJECTED"],
     ["fixture secret-token", "GIT_FAILED"], ["x".repeat(2000), "OUTPUT_LIMIT"], [null, "TIMEOUT"]]) {
     const tools = await createGitTools({ policy: f.policy, gitExecutable: GIT, limits: { timeoutMs: 3000, maxOutputBytes: 1024 } });

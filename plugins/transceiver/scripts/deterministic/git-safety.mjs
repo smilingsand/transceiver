@@ -179,3 +179,20 @@ export async function inspectGitExecutable(executable) {
   if (!stat.isFile() || stat.ino === 0n) throw new TypeError("Git executable must be a regular file with stable identity.");
   return { executable: canonical, stat };
 }
+
+// GCM is accepted only as the sibling shipped alongside the already trusted
+// native Git executable. Its path is never supplied by an MCP caller/config.
+export async function inspectGitCredentialManager(gitExecutable) {
+  if (process.platform !== "win32") throw new ProjectPolicyError("CREDENTIAL_UNAVAILABLE", "GitHub GCM is supported only with Git for Windows.");
+  const candidate = path.join(path.dirname(gitExecutable), "git-credential-manager.exe");
+  try {
+    const stat = await fs.lstat(candidate, { bigint: true });
+    const canonical = await fs.realpath(candidate);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.ino === 0n ||
+        canonical.toLowerCase() !== candidate.toLowerCase() ||
+        !/^[a-zA-Z]:[a-zA-Z0-9_./ -]+$/u.test(canonical.replaceAll("\\", "/"))) throw new Error("unsafe helper");
+    return { executable: canonical, stat };
+  } catch {
+    throw new ProjectPolicyError("CREDENTIAL_UNAVAILABLE", "Trusted Git for Windows Credential Manager is unavailable or its installation path is unsupported.");
+  }
+}
