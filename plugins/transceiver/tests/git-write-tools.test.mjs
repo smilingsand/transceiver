@@ -7,6 +7,7 @@ import { PassThrough } from "node:stream";
 import test from "node:test";
 import { createProjectPolicy } from "../scripts/project-policy.mjs";
 import { createGitTools } from "../scripts/deterministic/git-tools.mjs";
+import { GIT_LIMITS } from "../scripts/deterministic/git-executor.mjs";
 import { createGitEnvironment } from "../scripts/deterministic/git-safety.mjs";
 
 const GIT = process.env.TRANSCEIVER_TEST_GIT || (process.platform === "win32" ? "D:/Program Files/Git/mingw64/bin/git.exe" : "/usr/bin/git");
@@ -277,6 +278,40 @@ function fakeProcess(action) {
   if (action) queueMicrotask(() => action(child));
   return child;
 }
+test("push receives a separate 120-second total deadline; other Git operations remain 10 seconds", async (t) => {
+  assert.equal(GIT_LIMITS.timeoutMs, 10_000);
+  assert.equal(GIT_LIMITS.pushTimeoutMs, 120_000);
+  const f = await fixture(t);
+  const spawn = childProcess.spawn;
+  const originalTimer = globalThis.setTimeout;
+  const budgets = {};
+  let next;
+  const timerMock = t.mock.method(globalThis, "setTimeout", function (fn, ms, ...args) {
+    if (next) { budgets[next] = ms; next = undefined; }
+    return originalTimer(fn, ms, ...args);
+  });
+  const spawnMock = t.mock.method(childProcess, "spawn", function (executable, args, options) {
+    if (args.includes("push")) {
+      next = "push";
+      return fakeProcess((child) => { child.stdout.write("=\trefs/heads/main:refs/heads/main\t[up to date]\n"); child.emit("close", 0); });
+    }
+    const child = spawn.call(this, executable, args, options);
+    for (const name of ["status", "diff", "add", "commit"]) if (args.includes(name)) next = name;
+    return child;
+  });
+  try {
+    success(await f.push());
+    success(await f.tools.git_status({ project: "demo" }));
+    success(await f.tools.git_diff({ project: "demo", mode: "unstaged" }));
+    await fs.writeFile(path.join(f.root, "base.txt"), "fixture changed\n");
+    success(await f.add(["base.txt"]));
+    success(await f.commit());
+    assert.ok(budgets.push > 100_000 && budgets.push <= 120_000, JSON.stringify(budgets));
+    for (const name of ["status", "diff", "add", "commit"]) {
+      assert.ok(budgets[name] > 0 && budgets[name] <= 10_000, JSON.stringify(budgets));
+    }
+  } finally { timerMock.mock.restore(); spawnMock.mock.restore(); }
+});
 test("push timeout, output overflow and sanitized failure classifications never report success", async (t) => {
   const f = await fixture(t);
   const original = childProcess.spawn;
@@ -284,7 +319,7 @@ test("push timeout, output overflow and sanitized failure classifications never 
     ["could not read Username for 'https://secret-token@example.invalid': terminal prompts disabled", "AUTHENTICATION_REQUIRED"],
     ["Could not resolve host secret-token", "NETWORK_ERROR"], ["remote rejected secret-token", "REMOTE_REJECTED"],
     ["fixture secret-token", "GIT_FAILED"], ["x".repeat(2000), "OUTPUT_LIMIT"], [null, "TIMEOUT"]]) {
-    const tools = await createGitTools({ policy: f.policy, gitExecutable: GIT, limits: { timeoutMs: 3000, maxOutputBytes: 1024 } });
+    const tools = await createGitTools({ policy: f.policy, gitExecutable: GIT, limits: { pushTimeoutMs: 3000, maxOutputBytes: 1024 } });
     const mock = t.mock.method(childProcess, "spawn", function (executable, args, options) {
       if (!args.includes("push")) return original.call(this, executable, args, options);
       return fakeProcess(diagnostic === null ? undefined : (child) => { child.stderr.write(diagnostic); child.emit("close", 1); });
@@ -350,7 +385,7 @@ test("an oversized result after successful commit reports uncertain mutation, no
 
 test("push timeout terminates only the owned transport process tree", async (t) => {
   const f = await fixture(t);
-  const tools = await createGitTools({ policy: f.policy, gitExecutable: GIT, limits: { timeoutMs: 3000 } });
+  const tools = await createGitTools({ policy: f.policy, gitExecutable: GIT, limits: { pushTimeoutMs: 3000 } });
   const spawn = childProcess.spawn;
   let hanging;
   const kills = [];

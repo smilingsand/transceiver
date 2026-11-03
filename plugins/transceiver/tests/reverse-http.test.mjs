@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { once } from "node:events";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import childProcess from "node:child_process";
 import { request } from "node:http";
 import test from "node:test";
@@ -156,6 +158,54 @@ test("HTTP maps real tightened Git timeout without applying it to other tools", 
   assert.equal(result.structuredContent.timedOut, true);
   assert.equal(succeeded(await call(client, "read_project_file", { project: "demo", path: "sample.txt" })).ok, true);
   assert.equal(f.backend.calls.length, 0);
+});
+
+test("HTTP git_push can run past 10 seconds and maps a bounded push timeout", { timeout: 30_000 }, async (t) => {
+  const f = await createFixture(t);
+  await fixtureGit(f.root, ["config", "user.name", "Fixture"]);
+  await fixtureGit(f.root, ["config", "user.email", "fixture@example.invalid"]);
+  await fixtureGit(f.root, ["commit", "-m", "fixture baseline"]);
+  const bare = path.join(f.directory, "remote.git");
+  await fixtureGit(f.directory, ["init", "--bare", "--template=", bare]);
+  const url = bare.split(path.sep).join("/");
+  await fixtureGit(f.root, ["remote", "add", "origin", url]);
+  f.projects.projects[f.root].gitWrite = { push: true, pushTargets: [{ remote: "origin", url, branches: ["main"] }] };
+  await f.save();
+  const policy = await createProjectPolicy({ configPath: f.configPath });
+  const gitTools = await createGitTools({ policy, gitExecutable: GIT, limits: { pushTimeoutMs: 3000 } });
+  const server = createHttpServer({ ...f.config, stateDatabaseFile: path.join(f.directory, "push-timeout.sqlite") },
+    f.upstream, { fileTools: createProjectTools({ policy }), gitTools, modelCatalog: f.catalog });
+  f.servers.push(server);
+  server.listen(0, "127.0.0.1"); await once(server, "listening");
+  const timeoutClient = new Client({ name: "push-timeout-fixture", version: "1" });
+  f.clients.push(timeoutClient);
+  await timeoutClient.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${server.address().port}/mcp`)));
+  const original = childProcess.spawn;
+  let hang = false;
+  const mock = t.mock.method(childProcess, "spawn", function (executable, args, options) {
+    if (!args.includes("push")) return original.call(this, executable, args, options);
+    const child = new EventEmitter();
+    child.stdout = new PassThrough(); child.stderr = new PassThrough();
+    let timer;
+    child.kill = () => { clearTimeout(timer); queueMicrotask(() => child.emit("close", null)); return true; };
+    if (!hang) timer = setTimeout(() => {
+      child.stdout.write("=\trefs/heads/main:refs/heads/main\t[up to date]\n"); child.emit("close", 0);
+    }, 10_150);
+    return child;
+  });
+  const args = { project: "demo", remote: "origin", branch: "main" };
+  try {
+    const start = Date.now();
+    assert.equal(succeeded(await call(f.client, "git_push", args)).result, "up-to-date");
+    assert.ok(Date.now() - start >= 10_000);
+    hang = true;
+    const result = await call(timeoutClient, "git_push", args);
+    assert.equal(result.isError, true);
+    assert.equal(result.structuredContent.error.code, "TIMEOUT");
+    assert.equal(result.structuredContent.timedOut, true);
+    assert.equal(result.structuredContent.mutationMayHaveOccurred, true);
+    assert.equal(f.backend.calls.length, 0);
+  } finally { mock.mock.restore(); }
 });
 
 test("shared state preserves request replay, thread continuation, scope isolation and Activity lifecycle across POSTs", async (t) => {

@@ -65,7 +65,8 @@
 - Push 支持不含用户凭据、Query、Fragment 的规范 HTTPS URL，禁用重定向，不支持 SSH 和自定义传输。`githubGcm` 默认关闭；启用后仅精确授权的 `https://github.com/...` 推送可使用可信 Git for Windows 原生 Git 同目录的 GCM，其他 HTTPS 主机不会使用该助手。Git 安装及其依赖须可信且受本机权限保护。Git 会通过助手 Shell 调用固定且校验过的路径，不接受配置传入的任意助手。GCM 使用 `GCM_INTERACTIVE=0`、`GIT_TERMINAL_PROMPT=0`、GitHub provider 和 Windows Credential Manager；它可能读取、保存或删除凭据条目。不要把 Token 放入 URL 或参数。
 - 仅对启用认证的推送，`PATH` 指向可信 Git 的 bin 目录；`USERPROFILE`、`APPDATA`、`LOCALAPPDATA` 为绝对路径时按需传入。`HOME` 仍隔离，系统/全局 Git 配置及继承的 Git/GCM 环境变量仍被禁用。认证依赖 Bridge 的 Windows 账户、凭据、权限、网络和 GCM 安装。`CREDENTIAL_UNAVAILABLE` 表示固定助手不可用或路径不支持；`AUTHENTICATION_REQUIRED` 表示需要凭据或交互；`AUTHENTICATION_FAILED` 表示认证/访问被拒（包括 HTTP 401/403）。这些分类不能证明凭据存储状态。
 - 支持明确授权的本地绝对 Bare 目录，用于离线流程。Receive-Pack 前检查目标配置、元数据、链接和活动 Hooks；拒绝 UNC 及普通非 Bare 目标。URL 授权意味着允许写入该目标。HTTPS 远端仍可按自身策略拒绝推送。
-- 每个请求的全部子进程共享 10 秒期限、1 MiB stdout/stderr 预算；响应上限 64 KiB，扫描上限 20,000 条目，全局并发最多 4。进程内项目写锁阻止工具重叠访问。不返回原始 Git stderr/传输文本。错误区分授权、参数/路径、仓库不支持、认证、网络、Non-fast-forward、远程拒绝、超时和输出超限。
+- 每次 `git_push` 的总期限为 120 秒，涵盖授权、扫描和全部子进程；其他 Git 操作仍为 10 秒总期限。每个请求的全部子进程共享 1 MiB stdout/stderr 预算；响应上限 64 KiB，扫描上限 20,000 条目，全局并发最多 4。进程内项目写锁阻止工具重叠访问。不返回原始 Git stderr/传输文本。错误区分授权、参数/路径、仓库不支持、认证、网络、Non-fast-forward、远程拒绝、超时和输出超限。
+- 客户端和中间链路的超时独立于服务端期限。项目安装的 MCP SDK 客户端默认等待 60 秒；可自行配置的客户端应允许超过 120 秒并预留传输开销（例如 130 秒）。此处无法确认 ChatGPT 连接器和 Tunnel 的超时，可能更短。客户端断开或超时不代表操作已取消或回滚，重试前应检查远端。GCM 交互仍然禁用。
 - 这不是进程树沙箱，也不对恶意本地并发写入提供原子防护；应使用可信、空闲的仓库，OS 权限仍是外层边界。HTTPS 远端 Hooks 按远端自身策略执行。
 - 检查 `ok`、`complete`、`truncated`、`timedOut`。尝试写入后的错误带有 `mutationMayHaveOccurred: true`；超时、输出超限、后验失败或断线不代表回滚。重试前检查 Status、暂存 Diff、本地 HEAD 及远端状态。
 

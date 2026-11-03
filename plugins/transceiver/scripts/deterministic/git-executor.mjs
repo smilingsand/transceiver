@@ -6,7 +6,7 @@ import { createGitEnvironment, fixedGitArguments, inspectGitCredentialManager, i
 import { authorizeWrite, validateWriteInput, WRITE_OPERATIONS } from "./git-write-policy.mjs";
 import { executeGitWrite } from "./git-write-operations.mjs";
 
-export const GIT_LIMITS = Object.freeze({ timeoutMs: 10_000, maxOutputBytes: 1024 * 1024,
+export const GIT_LIMITS = Object.freeze({ timeoutMs: 10_000, pushTimeoutMs: 120_000, maxOutputBytes: 1024 * 1024,
   maxResultBytes: 64 * 1024, maxEntries: 20_000, maxConcurrent: 4 });
 let activeOperations = 0;
 const writingProjects = new Set();
@@ -121,7 +121,7 @@ export async function createGitExecutor({ policy, gitExecutable, limits: overrid
       }
       activeOperations++;
       active++;
-      const deadline = performance.now() + limits.timeoutMs;
+      const deadline = performance.now() + (operation === "push" ? limits.pushTimeoutMs : limits.timeoutMs);
       let writingRoot;
       let accessRoot;
       let mutationAttempted = false;

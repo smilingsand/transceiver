@@ -433,7 +433,7 @@ test("entry scan and trusted executable/limits restrictions fail closed", async 
     const launcher = path.resolve(path.dirname(GIT), "../../cmd/git.exe");
     await assert.rejects(createGitTools({ policy: f.policy, gitExecutable: launcher }), TypeError);
   }
-  for (const limits of [{ maxConcurrent: 5 }, { maxOutputBytes: 0 }, { timeoutMs: 20_000 }, { shell: 1 }, { constructor: 1 }]) {
+  for (const limits of [{ maxConcurrent: 5 }, { maxOutputBytes: 0 }, { timeoutMs: 20_000 }, { pushTimeoutMs: 120_001 }, { shell: 1 }, { constructor: 1 }]) {
     await assert.rejects(createGitTools({ policy: f.policy, gitExecutable: GIT, limits }), TypeError);
   }
 });

@@ -51,7 +51,7 @@ export function registerDeterministicTools(server, services) {
       { project, paths: z.array(z.string().min(1).max(1024)).min(1).max(100) }],
     ["git_commit", "Commit Staged Project Files", "Commit only staged changes with an explicit message. Requires server gitWrite.commit permission; sensitive paths and active hooks are rejected. Inspect state after incomplete results.",
       { project, message: z.string().min(1).max(8192) }],
-    ["git_push", "Push Project Branch", "Ordinary non-force push to an explicit authorized remote and branch, pinned to the server URL grant. Requires server gitWrite.push permission. No arbitrary refspecs or credential helpers.",
+    ["git_push", "Push Project Branch", "Ordinary non-force push to an explicit authorized remote and branch, pinned to the server URL grant. Requires server gitWrite.push permission. No arbitrary refspecs or credential helpers; an opted-in GitHub target can use the trusted Windows GCM.",
       { project, remote: z.string().min(1).max(200), branch: z.string().min(1).max(200) }],
   ];
   for (const [name, title, description, schema] of writes) {
