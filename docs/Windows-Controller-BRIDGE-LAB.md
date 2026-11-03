@@ -116,3 +116,5 @@ Offline regression can use `pwsh -NoProfile -File .\scripts\bridge-lab.Tests.ps1
 ## History and validation
 
 T4.1-B V3 focused on a verified Codex CLI, environment mapping, separate logs and PID identity; T4.4-E added filling missing managed components and rollback of newly started processes. Historical originals are in Git history. The [workflow guide](GPT-Codex-Collaboration-Workflow-v1.0.md) describes historical T4–T5 tests on a particular setup, not guarantees for other systems or versions. Not all exceptional protections have dynamic fault-injection coverage, and forced disconnection during a running task remains insufficiently verified. Documentation consolidation did not restart services or rerun live tests.
+
+Controller help: `./scripts/bridge-lab.ps1 help` (also `-Action help`, `--Action help`, `-H`, or `/?`). It exits without starting services or reading configuration.

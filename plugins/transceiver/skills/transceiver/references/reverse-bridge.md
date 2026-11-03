@@ -33,6 +33,18 @@ Only roots with both properties enabled enter `CODEX_MCP_BRIDGE_ROOTS`. Names mu
 6. The Codex thread's incoming message starts with `|from_chatgpt|:`.
 7. ChatGPT Developer Mode sees the tunnel connection and performs one live tool call.
 
+For a new App Server thread, Transceiver also requests the explicit name
+`[ChatGPT] <project> — <task>`. It prefers the Activity title and otherwise
+uses the first meaningful prompt line. Potential credential-like text is
+excluded, whitespace is normalized, and the name is limited to 85 characters;
+this heuristic cannot guarantee detection of every sensitive value. Continued
+threads and steering are not renamed. Naming is best effort: unsupported or
+failed `thread/name/set` requests leave Codex's own title in place without
+failing the task. Desktop may display or later change titles independently.
+The API is present in Codex CLI 0.142.5 and the locally checked 0.166.0-alpha.5.1;
+the earliest supported version has not been established. Support can also vary
+with thread storage mode and the running App Server version.
+
 Local proofs do not substitute for item 7. Account-side live testing requires `tunnel-client`, a `tunnel_id`, a runtime API key, Tunnels Read + Use, target-workspace association, and ChatGPT Developer Mode.
 
 ## Shared project status

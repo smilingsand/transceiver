@@ -15,6 +15,7 @@ import { BridgeStateStore } from "codex-mcp-bridge-for-chatgpt/dist/stateStore.j
 import { UserSettingsStore } from "codex-mcp-bridge-for-chatgpt/dist/userSettings.js";
 import { CodexBackendRouter } from "codex-mcp-bridge-for-chatgpt/dist/upstreamRouter.js";
 import { assertDeterministicServices, registerDeterministicTools } from "./deterministic/register-tools.mjs";
+import { titleContext } from "./reverse-title.mjs";
 
 export function assertBridgeCompatibility(build = BRIDGE_BUILD_INFO, factory = createBridgeMcpServer) {
   if (build?.version !== "0.3.0" ||
@@ -36,6 +37,13 @@ export function createSharedBridgeState(config, upstream, { modelCatalog } = {})
       ttlMs: config.jobTtlMs, maxJobs: config.maxRetainedJobs, maxResultBytes: config.maxJobResultBytes,
       staleAfterMs: config.jobStaleAfterMs, stateFile: config.jobStateFile, stateStore,
       allowedRoots: config.allowedRoots });
+    // The pinned upstream strips activityTitle from the backend payload. Bind it
+    // to the job's callback so concurrent and deferred jobs keep their own title.
+    const startJob = jobs.start.bind(jobs);
+    jobs.start = (input, run, ...rest) => {
+      const title = jobs.getActivity(input.activityId)?.title;
+      return startJob(input, (...args) => titleContext.run(title, () => run(...args)), ...rest);
+    };
     const catalog = modelCatalog || new CodexCliModelCatalog(config.codexCommand, config.modelCatalogCacheTtlMs,
       config.modelCatalogTimeoutMs, undefined, undefined, config.modelCatalogStateFile);
     const userSettings = new UserSettingsStore(config, { stateFile: config.settingsStateFile, stateStore });

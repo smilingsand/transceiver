@@ -146,3 +146,5 @@ Report the results, any truncation, and Git status. Do not modify files.
 Verify the actual calls succeeded for the intended project. Tool discovery, local health and a live Tunnel process do not substitute for this end-to-end check. If task execution also needs verification, request a `codex_task` with the real absolute cwd and `read-only` sandbox, and use `codex_status` to reach a terminal state. After a disconnect or timeout, check Job status before retrying; do not assume cancellation.
 
 If local health succeeds but the call fails, check the profile URL, organization/workspace association, permissions, connector selection and client doctor output; redact logs. The optional [GPT collaboration instructions](docs/GPT-Codex-Collaboration-Instructions-CN.md) are in Chinese and are not automatically loaded into ChatGPT.
+
+Controller help: `./scripts/bridge-lab.ps1 help` (also `-Action help`, `--Action help`, `-H`, or `/?`). It exits without starting services or reading configuration.

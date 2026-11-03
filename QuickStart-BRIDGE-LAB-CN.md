@@ -195,3 +195,5 @@ node .\plugins\transceiver\scripts\transceiver.mjs project-get --root $projectRo
 确认实际工具调用成功及项目正确；工具发现、本地健康和 Tunnel 进程存活各自不能替代这次端到端调用。需要任务验证时，可请求 `codex_task` 以该真实绝对路径为 cwd、`read-only` sandbox 概述目录，并用 `codex_status` 查询终态。断线或超时后先查 Job 状态，勿假定任务已取消或盲目重发。
 
 本地健康但调用失败时，检查 profile URL、Tunnel 组织与工作区、权限及连接器选择；必要时按客户端帮助运行 doctor 并检查脱敏日志。协同规则可选用 [GPT 协同指令](docs/GPT-Codex-Collaboration-Instructions-CN.md)，仓库文件不会自动加载到 ChatGPT。
+
+控制器帮助：`./scripts/bridge-lab.ps1 help`（也支持 `-Action help`, `--Action help`、`-H` 或 `/?`）。帮助命令不会启动服务或读取配置。

@@ -9,7 +9,8 @@ import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 
 import { tagChatGptPrompt } from "../scripts/reverse-provenance.mjs";
-import { TransceiverRouter } from "../scripts/reverse-router.mjs";
+import { TransceiverRouter, setNewThreadTitle } from "../scripts/reverse-router.mjs";
+import { makeThreadTitle, titleContext } from "../scripts/reverse-title.mjs";
 
 const PLUGIN_ROOT = path.resolve(import.meta.dirname, "..");
 const BUNDLE = path.join(PLUGIN_ROOT, "dist", "reverse-bridge", "index.mjs");
@@ -45,6 +46,50 @@ test("ChatGPT provenance is rebuilt exactly once", () => {
   assert.equal(tagged.match(/\|from_chatgpt\|:/g).length, 1);
   assert.match(tagged, /project: demo/);
   assert.match(tagged, /inspect this/);
+});
+
+test("thread titles prefer safe activity titles and otherwise use the task", () => {
+  assert.equal(makeThreadTitle("transceiver", "Documentation\nQA", "other task"), "[ChatGPT] transceiver — Documentation QA");
+  assert.equal(makeThreadTitle("demo", "Codex activity", "Fix documentation. Then test it."), "[ChatGPT] demo — Fix documentation.");
+  assert.equal(makeThreadTitle("demo", "", "|from_chatgpt|:\nproject: demo\ntransport: transceiver-mcp\n\nReview docs"), "[ChatGPT] demo — Review docs");
+  assert.equal(makeThreadTitle("demo", "token: abc", "Review API key: abc"), "[ChatGPT] demo — Task");
+  const title = makeThreadTitle("demo", "😀".repeat(100), "");
+  assert.equal(Array.from(title).length, 85);
+  assert.ok(title.endsWith("…"));
+});
+
+test("only a new app-server thread is named and naming errors do not fail tasks", async () => {
+  const calls = [];
+  const app = {
+    workers: [{ index: 0, generation: 1, connection: { rpc: { request: async (...args) => { calls.push(args); throw new Error("unsupported"); } } } }],
+    async callTool(name, args, progress, assigned) {
+      assigned({ threadId: "new", backendKind: "app-server", workerId: "app-0", workerGeneration: 1 });
+      return { structuredContent: { threadId: "new" } };
+    },
+    close: async () => {},
+  };
+  const router = new TransceiverRouter("app-server", { close: async () => {} }, app, { allowedProjects: [{ root: "/demo", name: "demo" }] });
+  await titleContext.run("Documentation QA", () => router.callTool("codex", { cwd: "/demo", prompt: "inspect" }));
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].slice(0, 2), ["thread/name/set", { threadId: "new", name: "[ChatGPT] demo — Documentation QA" }]);
+  await router.callTool("codex-reply", { threadId: "new", prompt: "continue" });
+  assert.equal(calls.length, 1);
+});
+
+test("title retries an empty rollout and redacts terminal errors", async () => {
+  let attempts = 0;
+  await setNewThreadTitle({ request: async () => {
+    if (++attempts === 1) throw Object.assign(new Error("rollout at C:\\private\\session is empty"), { code: -32603 });
+  } }, "1234-abcd", "safe title");
+  assert.equal(attempts, 2);
+  const warnings = [];
+  const original = console.warn;
+  try {
+    console.warn = (message) => warnings.push(message);
+    await setNewThreadTitle({ request: async () => { throw new Error("secret path C:\\private"); } }, "1234-abcd", "safe title");
+  } finally { console.warn = original; }
+  assert.match(warnings[0], /threadId=1234-abcd category=rpc_error message=\[redacted\]/);
+  assert.doesNotMatch(warnings[0], /secret|private/);
 });
 
 test("reverse router tags starts, continuations after restart, and steering", async () => {

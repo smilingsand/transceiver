@@ -178,6 +178,19 @@ test("shared state preserves request replay, thread continuation, scope isolatio
   assert.equal((await f.client.listTools()).tools.length, 12);
 });
 
+test("HTTP activity title reaches the new thread naming request", async (t) => {
+  const f = await createFixture(t);
+  const names = [];
+  f.backend.workers = [{ index: 0, generation: 1, connection: { rpc: { request: async (method, params) => { names.push({ method, params }); } } } }];
+  const original = f.backend.callTool.bind(f.backend);
+  f.backend.callTool = (name, args, progress, assigned) => original(name, args, progress,
+    (assignment) => assigned({ ...assignment, workerId: "app-0" }));
+  const first = succeeded(await call(f.client, "codex_task", taskArgs(f.root, { activityTitle: "Documentation QA" })));
+  assert.deepEqual(names, [{ method: "thread/name/set", params: { threadId: first.threadId, name: "[ChatGPT] demo — Documentation QA" } }]);
+  succeeded(await call(f.client, "codex_task", taskArgs(f.root, { sessionMode: "continue", threadId: first.threadId })));
+  assert.equal(names.length, 1);
+});
+
 test("settings, model catalog and optimistic revisions remain shared and preserve locale metadata", async (t) => {
   const f = await createFixture(t);
   const models = succeeded(await call(f.client, "codex_models"));

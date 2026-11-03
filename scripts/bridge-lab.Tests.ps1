@@ -14,6 +14,8 @@ $fixtureScripts = Join-Path $fixture 'scripts'
 New-Item -ItemType Directory -Path $fixtureScripts -Force | Out-Null
 $controller = Join-Path $fixtureScripts 'bridge-lab.ps1'
 [IO.File]::WriteAllText($controller, $ast.Extent.Text.Substring(0,$dispatch[0].Extent.StartOffset), (New-Object Text.UTF8Encoding($true)))
+$fullController = Join-Path $fixtureScripts 'full-controller.ps1'
+Copy-Item -LiteralPath $source -Destination $fullController
 $envFile = Join-Path $fixture 'bridge.env'
 function Check($actual,$expected) {
     if ($actual -cne $expected) { throw "Expected [$expected], got [$actual]" }
@@ -24,6 +26,33 @@ function Write-Env([string]$text,[bool]$bom=$false) {
 $location = Get-Location
 try {
     Set-Location ([IO.Path]::GetTempPath())
+    Write-Env 'INVALID CONFIGURATION MUST NOT BE READ'
+    foreach ($invoke in @({ & $fullController help },{ & $fullController -Action help },{ & $fullController --Action help },{ & $fullController --aCtIoN HeLp },{ & $fullController HeLp },{ & $fullController -aCtIoN HeLp },{ & $fullController -h },{ & $fullController -H },{ & $fullController /? })) {
+        $helpOutput = & $invoke
+        if (($helpOutput -join "`n") -notmatch 'cleanup-logs -DryRun' -or $helpOutput.Count -ne 4) { throw 'Invalid help output' }
+    }
+    if (Test-Path -LiteralPath (Join-Path $fixture 'runtime')) { throw 'Help created runtime files' }
+    foreach ($case in @(
+        @{ Run={ & $fullController --Action start }; Error='Only --Action help' },
+        @{ Run={ & $fullController --Action help -DryRun }; Error='Only --Action help' },
+        @{ Run={ & $fullController status invalid }; Error='LogRetentionDays must' },
+        @{ Run={ & $fullController status 0 }; Error='LogRetentionDays must' },
+        @{ Run={ & $fullController invalid }; Error='ValidateSet' }
+    )) {
+        $message = ''
+        try { & $case.Run } catch { $message = $_.ToString() }
+        if ($message -notmatch $case.Error) { throw "Unexpected invalid-command result: $message" }
+    }
+    if (Test-Path -LiteralPath (Join-Path $fixture 'runtime')) { throw 'Invalid command created runtime files' }
+    Remove-Item -LiteralPath $envFile
+    foreach ($action in @('start','status','stop')) {
+        . $controller $action 14
+        Check $Action $action
+        Check $LogRetentionDays 14
+        . $controller -Action $action -LogRetentionDays 14
+        Check $Action $action
+        Check $LogRetentionDays 14
+    }
     . $controller
     Check $repoRoot $fixture
     Check $ConfigPath (Join-Path $fixture 'config.json')

@@ -7,10 +7,13 @@ Only processes started by this controller are eligible for stop.
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('start','stop','status','cleanup-logs')][string]$Action = 'status',
+    [ValidateSet('start','stop','status','cleanup-logs','help','/?','--Action')][string]$Action = 'status',
+    [Alias('h')][switch]$Help,
     [switch]$DryRun,
     [switch]$All,
-    [ValidateRange(1,3650)][int]$LogRetentionDays = 7,
+    # PowerShell binds the literal --Action as Action and its next word here.
+    # Convert and validate immediately below, before reading config or doing work.
+    [object]$LogRetentionDays = 7,
     [string]$ConfigPath = 'config.json',
     [string]$RuntimeDir = 'runtime',
     [string]$StateDir = '',
@@ -18,8 +21,8 @@ param(
     [string]$LogDir = '',
     [string]$ProfileDir = '',
     [string]$TunnelProfile = 'transceiver-t2',
-    [string]$TunnelExe = (Join-Path $env:ProgramFiles 'tunnel-client\tunnel-client.exe'),
-    [string]$GitExe = (Join-Path $env:ProgramFiles 'Git\mingw64\bin\git.exe'),
+    [string]$TunnelExe = '',
+    [string]$GitExe = '',
     [string]$CodexBin = '',
     [string]$ExpectedCodexVersion = '',
     [string]$NodeExe = 'node.exe',
@@ -30,6 +33,23 @@ param(
     [ValidateSet('0','1')][string]$AllowWrite = '0',
     [ValidateSet('0','1')][string]$AllowDangerFullAccess = '0'
 )
+if ($Action -eq '--Action') {
+    if ($PSBoundParameters.ContainsKey('LogRetentionDays') -and $LogRetentionDays -is [string] -and $LogRetentionDays -eq 'help' -and $PSBoundParameters.Count -eq 2) {
+        $Action = 'help'
+    } else { throw 'Only --Action help is supported; use -Action for other actions.' }
+} elseif ($PSBoundParameters.ContainsKey('LogRetentionDays')) {
+    try { $LogRetentionDays = [int]$LogRetentionDays } catch { throw 'LogRetentionDays must be an integer from 1 to 3650' }
+    if ($LogRetentionDays -lt 1 -or $LogRetentionDays -gt 3650) { throw 'LogRetentionDays must be an integer from 1 to 3650' }
+}
+if ($Help -or $Action -in @('help','/?')) {
+    Write-Output 'Usage: .\scripts\bridge-lab.ps1 start | status | stop'
+    Write-Output '       .\scripts\bridge-lab.ps1 cleanup-logs -DryRun'
+    Write-Output '       .\scripts\bridge-lab.ps1 help | -H | /?'
+    Write-Output 'cleanup-logs: omit -DryRun to delete eligible logs; -LogRetentionDays N sets retention, or -All selects all eligible logs.'
+    return
+}
+if (-not $PSBoundParameters.ContainsKey('TunnelExe')) { $TunnelExe = Join-Path $env:ProgramFiles 'tunnel-client\tunnel-client.exe' }
+if (-not $PSBoundParameters.ContainsKey('GitExe')) { $GitExe = Join-Path $env:ProgramFiles 'Git\mingw64\bin\git.exe' }
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($All -and $Action -ne 'cleanup-logs') { throw '-All is only valid with -Action cleanup-logs' }
@@ -90,6 +110,7 @@ foreach ($key in $envValues.Keys) {
         if ($parameter -eq 'LogRetentionDays' -and ($value -notmatch '^\d{1,4}$' -or [int]$value -lt 1 -or [int]$value -gt 3650)) {
             throw 'bridge.env LOG_RETENTION_DAYS must be an integer from 1 to 3650'
         }
+        if ($parameter -eq 'LogRetentionDays') { $value = [int]$value }
         Set-Variable -Name $parameter -Value $value
     }
 }
