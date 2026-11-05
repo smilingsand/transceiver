@@ -10,6 +10,7 @@ param(
     [ValidateSet('start','stop','status','cleanup-logs','help','/?','--Action')][string]$Action = 'status',
     [Alias('h')][switch]$Help,
     [switch]$DryRun,
+    [switch]$Force,
     [switch]$All,
     # PowerShell binds the literal --Action as Action and its next word here.
     # Convert and validate immediately below, before reading config or doing work.
@@ -45,13 +46,14 @@ if ($Help -or $Action -in @('help','/?')) {
     Write-Output 'Usage: .\scripts\bridge-lab.ps1 start | status | stop'
     Write-Output '       .\scripts\bridge-lab.ps1 cleanup-logs -DryRun'
     Write-Output '       .\scripts\bridge-lab.ps1 help | -H | /?'
-    Write-Output 'cleanup-logs: omit -DryRun to delete eligible logs; -LogRetentionDays N sets retention, or -All selects all eligible logs.'
+    Write-Output 'cleanup-logs: confirm with y to delete; -Force bypasses confirmation; -DryRun previews; -All selects all eligible logs.'
     return
 }
 if (-not $PSBoundParameters.ContainsKey('TunnelExe')) { $TunnelExe = Join-Path $env:ProgramFiles 'tunnel-client\tunnel-client.exe' }
 if (-not $PSBoundParameters.ContainsKey('GitExe')) { $GitExe = Join-Path $env:ProgramFiles 'Git\mingw64\bin\git.exe' }
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+if ($Force -and $Action -ne 'cleanup-logs') { throw '-Force is only valid with -Action cleanup-logs' }
 if ($All -and $Action -ne 'cleanup-logs') { throw '-All is only valid with -Action cleanup-logs' }
 if ($All -and $PSBoundParameters.ContainsKey('LogRetentionDays')) { throw '-All cannot be combined with -LogRetentionDays' }
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
@@ -301,18 +303,35 @@ function Assert-CleanupPath([string]$path) {
         if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'reparse point in path' }
     }
 }
+function Test-CleanupPortListening {
+    $listeners = [Net.NetworkInformation.IPGlobalProperties]::GetIPGlobalProperties().GetActiveTcpListeners()
+    return [bool]@($listeners | Where-Object { $_.Port -eq $Port }).Count
+}
 function Get-CleanupProtection {
-    # Fail closed: missing records, inaccessible metadata and reused PIDs are not
-    # evidence that logs are idle. Do not print record contents or CIM command lines.
-    Assert-CleanupPath $pidPath
-    $record = Read-Record
-    if (-not $record -or [string]$record.configPath -ne $ConfigPath -or -not $record.logs) { throw 'missing or incompatible controller record' }
+    # An absent record alone proves nothing. Inspect its parent and distinguish a
+    # missing leaf from access errors; never follow a record or ancestor link.
+    Assert-CleanupPath $ControlDir
+    $recordExists = $true
+    try { [void][IO.File]::GetAttributes($pidPath) }
+    catch { if ($_.Exception.GetBaseException() -is [IO.FileNotFoundException]) { $recordExists = $false } else { throw } }
+    if ($recordExists) {
+        Assert-CleanupPath $pidPath
+        $record = Read-Record
+        if (-not $record -or [string]$record.configPath -ne $ConfigPath -or -not $record.logs) { throw 'incompatible controller record' }
+    } else { $record = $null }
     $processes = @(Get-CimInstance Win32_Process -ErrorAction Stop)
+    if (-not $recordExists -and (Test-CleanupPortListening)) { throw 'Bridge port has a listener' }
     $activePaths = @{}
     $verifiedIds = @()
-    foreach ($component in @('bridge','tunnel')) {
+    foreach ($component in $(if ($recordExists) { @('bridge','tunnel') } else { @() })) {
         $entry = $record.$component
         if ($null -eq $entry -or [int]$entry.pid -le 0 -or -not $entry.startedUtc) { throw 'incomplete process identity record' }
+        try { [void][datetime]::Parse([string]$entry.startedUtc) } catch { throw 'invalid process creation time' }
+        foreach ($suffix in @('Out','Err')) {
+            $value = [string]$record.logs.($component + $suffix)
+            if ([string]::IsNullOrWhiteSpace($value) -or -not [IO.Path]::IsPathRooted($value)) { throw 'log path is missing or relative' }
+            [void][IO.Path]::GetFullPath($value)
+        }
         $marker = if ($component -eq 'bridge') { 'reverse-runtime.mjs' } else { 'tunnel-client.exe' }
         $matchingPid = @($processes | Where-Object { [int]$_.ProcessId -eq [int]$entry.pid })
         if ($matchingPid.Count -eq 0) { continue }
@@ -452,8 +471,22 @@ function Remove-ControllerLogs {
     return [pscustomobject]$counts
 }
 
+function Confirm-LogCleanup {
+    # Redirected/non-console input must never block an unattended job.
+    if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) {
+        Write-Warning 'Cleanup cancelled: interactive input unavailable; use -Force for automation.'
+        return $false
+    }
+    try { $answer = Read-Host 'Delete eligible historical logs? [y/N]' }
+    catch { Write-Warning 'Cleanup cancelled: confirmation unavailable.'; return $false }
+    return ($answer -ceq 'y' -or $answer -ceq 'Y')
+}
 switch ($Action) {
-    'cleanup-logs' { Remove-ControllerLogs | Out-Null; break }
+    'cleanup-logs' {
+        if ($DryRun -or $Force -or (Confirm-LogCleanup)) { Remove-ControllerLogs | Out-Null }
+        else { Write-Host 'Log cleanup cancelled.' }
+        break
+    }
     'status' { Show-Status; break }
     'start' {
         Assert-File $ConfigPath 'Bridge config'

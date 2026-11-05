@@ -26,6 +26,7 @@ PowerShell 控制器
 | --- | --- |
 | `Action` | `status`、`start`、`stop` 或 `cleanup-logs`；默认 `status`。 |
 | `All` | 仅用于 `cleanup-logs`，忽略文件年龄；可与 `-DryRun` 组合，不能与显式 `-LogRetentionDays` 组合。文件中的 `LOG_RETENTION_DAYS` 仍须有效，0 无效。 |
+| `Force` | 仅用于 `cleanup-logs`；自动化时跳过确认，不跳过安全检查。 |
 | `DryRun` | 配合 `cleanup-logs` 预览拟删除文件，不删除任何文件。 |
 | `LogRetentionDays` | 历史日志保留天数，默认 7，范围 1–3650；对应 `LOG_RETENTION_DAYS`。 |
 | `ConfigPath` | Transceiver 项目配置文件；与项目 CLI 的 `TRANSCEIVER_CONFIG` 必须一致。默认 `<repo>/config.json`；记录和日志独立于该文件的位置。 |
@@ -130,13 +131,15 @@ PowerShell 控制器
 .\scripts\bridge-lab.ps1 -Action cleanup-logs -All
 ```
 
+删除前仅 `y` 或 `Y` 确认；空输入或其他输入取消，输入重定向或不可用时直接取消。自动化可用 `-Force`；`-DryRun` 即使与 `-Force` 同用也不提示、不删除。取消正常返回。
+
 保留天数优先级为显式 `-LogRetentionDays` > 根目录 `bridge.env` 中的 `LOG_RETENTION_DAYS` > 默认 7 天，合法范围 1–3650。清理开始时计算一次截止时间，只有 `LastWriteTime` 严格早于截止时间的文件才可能删除，不按文件大小或创建时间判断。
 
 `-All` 忽略年龄，其他安全检查及活动日志保护仍生效；`-All -DryRun` 只预览。它不能与显式 `-LogRetentionDays` 同用，`bridge.env` 中的 `LOG_RETENTION_DAYS` 仍须有效，0 会报错。参数和 Action 不区分大小写。
 
 仅检查解析后 `LogDir` 的直接子项，文件名须匹配 `bridge-*-out.log`、`bridge-*-err.log`、`tunnel-*-out.log` 或 `tunnel-*-err.log`（`*` 部分非空）。不递归，不清理 `.startup.log`、其他格式或其他目录。隐藏文件也会检查；目录、符号链接、目录联接、所有 Reparse Point 和硬链接均保留。日志根路径及其任意祖先包含重解析点时，整轮拒绝清理。
 
-清理先读取 `ControlDir/processes.json`，核对配置路径，并复用 PID、命令行标记和创建时间的身份验证。正在运行的 Bridge/Tunnel 各自保护记录中的 stdout/stderr，四个文件即使超过保留期、大小为零也保留。已记录 PID 确认不存在时，可视该组件已退出；PID 被复用、记录不完整、活动日志路径缺失/相对、进程查询失败、Node/Tunnel 命令行不可读，或发现未记录的 Bridge/Tunnel 时，均保守保留。记录不存在或 JSON 损坏也整轮保留；因此正常 `stop` 已移除记录后，本操作不会猜测哪些日志可删。
+清理先读取 `ControlDir/processes.json`，核对配置路径，并复用 PID、命令行标记和创建时间的身份验证。正在运行的 Bridge/Tunnel 各自保护记录中的 stdout/stderr，四个文件即使超过保留期、大小为零也保留。已记录 PID 确认不存在时，可视该组件已退出；PID 被复用、记录不完整、活动日志路径缺失/相对、进程查询失败、Node/Tunnel 命令行不可读，或发现未记录的 Bridge/Tunnel 时，均保守保留。记录损坏或不兼容时整轮保留。正常停止后记录不存在时，必须成功枚举进程，确认没有未经验证的 Bridge/Tunnel 进程，且配置的 Bridge 端口没有监听，才可清理；访问或查询失败则保留。每个候选文件删除前重复检查。
 
 每个候选文件在删除前重新读取状态、核验身份及活动日志路径，再检查文件名、位置、类型和最后写入时间。Windows 原生句柄检查会锁定祖先目录以阻止路径替换，独占打开候选文件以拒绝占用者，并通过同一个句柄复查类型、硬链接数量和写入时间后删除，不按通配符批量删除。占用、权限不足、文件消失或文件条件改变会单独报告，不影响其他安全候选文件。此路径需要 Windows 和可用的 `Add-Type`/Win32 调用；受限策略或祖先目录不可访问时保留文件并报告失败，不放宽检查。避免与其他 Controller 配置/状态变更操作并发执行。
 

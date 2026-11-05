@@ -172,7 +172,7 @@ node .\plugins\transceiver\scripts\transceiver.mjs project-get --root $projectRo
 .\scripts\bridge-lab.ps1 -Action cleanup-logs
 ```
 
-默认按最后写入时间保留 7 天；`-All` 忽略年龄，`-DryRun` 不删除，活动日志受保护，无法验证身份时保守跳过。`-All` 不可与显式 `-LogRetentionDays` 同用。详细范围和限制见[日志清理](docs/Windows-Controller-BRIDGE-LAB-CN.md#日志清理)。请保持组件运行以完成第 6 步；完成使用且任务空闲后才运行：
+删除前仅 `y` 或 `Y` 确认；输入重定向或不可用时取消。自动化可用 `-Force`；`-DryRun` 不提示也不删除。默认按最后写入时间保留 7 天；`-All` 忽略年龄，`-DryRun` 不删除，活动日志受保护，无法验证身份时保守跳过。`-All` 不可与显式 `-LogRetentionDays` 同用。详细范围和限制见[日志清理](docs/Windows-Controller-BRIDGE-LAB-CN.md#日志清理)。请保持组件运行以完成第 6 步；完成使用且任务空闲后才运行：
 
 ```powershell
 .\scripts\bridge-lab.ps1 -Action stop

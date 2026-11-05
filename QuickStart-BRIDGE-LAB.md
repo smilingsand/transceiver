@@ -171,7 +171,7 @@ Confirm that the Bridge is managed, that the listener PID and `/healthz` are hea
 .\scripts\bridge-lab.ps1 -Action cleanup-logs
 ```
 
-The default retention is 7 days based on last write time. `-All` ignores age, `-DryRun` deletes nothing, active logs are protected, and unverifiable identities cause conservative skips. `-All` cannot be combined with an explicit `-LogRetentionDays`. For details and limitations, see [log cleanup](docs/Windows-Controller-BRIDGE-LAB.md#log-cleanup). Keep the components running to complete step 6. Only after you finish using them and tasks are idle, run:
+Deletion requires `y` or `Y` confirmation; unavailable or redirected input cancels. Use `-Force` for automation; `-DryRun` never prompts or deletes. The default retention is 7 days based on last write time. `-All` ignores age, `-DryRun` deletes nothing, active logs are protected, and unverifiable identities cause conservative skips. `-All` cannot be combined with an explicit `-LogRetentionDays`. For details and limitations, see [log cleanup](docs/Windows-Controller-BRIDGE-LAB.md#log-cleanup). Keep the components running to complete step 6. Only after you finish using them and tasks are idle, run:
 
 ```powershell
 .\scripts\bridge-lab.ps1 -Action stop

@@ -26,6 +26,7 @@ The script determines the repository root from its own location rather than the 
 | --- | --- |
 | `Action` | `status`, `start`, `stop` or `cleanup-logs`; default is `status`. |
 | `All` | Only for `cleanup-logs`; ignores file age. May be combined with `-DryRun`, but not with an explicit `-LogRetentionDays`. Any `LOG_RETENTION_DAYS` in the file must still be valid; 0 is invalid. |
+| `Force` | Only for `cleanup-logs`; bypasses confirmation for automation, without bypassing safety checks. |
 | `DryRun` | Previews proposed deletions with `cleanup-logs` without deleting files. |
 | `LogRetentionDays` | Retention for historical logs; default 7, valid range 1–3650; corresponds to `LOG_RETENTION_DAYS`. |
 | `ConfigPath` | Transceiver project-policy file; must match the project CLI's `TRANSCEIVER_CONFIG`. Default `<repo>/config.json`; records and logs do not depend on this file's location. |
@@ -128,15 +129,18 @@ If the running instance uses custom `ConfigPath`, `ControlDir` or `LogDir`, pass
 .\scripts\bridge-lab.ps1 -Action cleanup-logs -LogRetentionDays 14
 .\scripts\bridge-lab.ps1 -Action cleanup-logs -All -DryRun
 .\scripts\bridge-lab.ps1 -Action cleanup-logs -All
+.\scripts\bridge-lab.ps1 -Action cleanup-logs -Force # automation
 ```
 
 Retention precedence is explicit `-LogRetentionDays` > `LOG_RETENTION_DAYS` in root `bridge.env` > default seven days; valid range is 1–3650. The cutoff is computed once at the start of cleanup. Only files with `LastWriteTime` strictly earlier than the cutoff can be deleted; neither file size nor creation time is used.
+
+Deletion requires an interactive confirmation: only `y` or `Y` accepts; blank or any other response cancels. Redirected or unavailable input cancels without waiting. Use `-Force` for unattended cleanup; `-DryRun` never prompts or deletes, even with `-Force`. Cancellation returns normally without deleting.
 
 `-All` ignores age but preserves other safety checks and active-log protection; `-All -DryRun` only previews. `-All` cannot be combined with explicit `-LogRetentionDays`. Any `LOG_RETENTION_DAYS` in `bridge.env` must still be valid; zero is an error. Parameters and Action names are case-insensitive.
 
 Only direct children of the resolved `LogDir` are examined. Filenames must match `bridge-*-out.log`, `bridge-*-err.log`, `tunnel-*-out.log` or `tunnel-*-err.log`, with a nonempty `*` component. Cleanup is nonrecursive and excludes `.startup.log`, other patterns and other directories. Hidden files are checked, but directories, symbolic links, junctions, all reparse points and hard links are retained. A reparse point in the log root or any ancestor rejects the entire cleanup.
 
-Cleanup first reads `ControlDir/processes.json`, validates the configuration path, and reuses PID, command-line marker and creation-time identity checks. Each live Bridge/Tunnel protects its recorded stdout and stderr files, even if those four files are old or empty. If a recorded PID is confirmed absent, that component may be treated as exited. If a PID has been reused, the record is incomplete, an active log path is missing or relative, process queries fail, Node/Tunnel command lines cannot be read, or an unrecorded Bridge/Tunnel is found, the files are conservatively retained. Missing or corrupt records also cause the entire cleanup to retain files. Consequently, after a normal `stop` removes the record, cleanup does not guess which logs can safely be deleted.
+Cleanup first reads `ControlDir/processes.json`, validates the configuration path, and reuses PID, command-line marker and creation-time identity checks. Each live Bridge/Tunnel protects its recorded stdout and stderr files, even if those four files are old or empty. If a recorded PID is confirmed absent, that component may be treated as exited. If a PID has been reused, the record is incomplete, an active log path is missing or relative, process queries fail, Node/Tunnel command lines cannot be read, or an unrecorded Bridge/Tunnel is found, the files are conservatively retained. Corrupt or incompatible records cause cleanup to retain files. When the record is absent after a normal stop, cleanup requires successful process enumeration with no unverified Bridge/Tunnel processes and no listener on the configured Bridge port. Access or query failures also withhold cleanup. These checks are repeated before each candidate.
 
 Before deleting each candidate, cleanup rereads state, revalidates identities and active log paths, then checks filename, location, type and last-write time. Windows native-handle checks lock ancestor directories against path replacement, exclusively open the candidate to reject busy files, recheck type, hard-link count and last-write time through the same handle, and then delete via that handle rather than performing a bulk wildcard deletion. Busy, inaccessible, vanished or changed candidates are reported separately without preventing checks of other safe candidates. This path requires Windows and usable `Add-Type`/Win32 calls. If policy restricts those calls or ancestor directories are inaccessible, files are retained and failures reported; checks are not weakened. Avoid running cleanup concurrently with other controller configuration or state changes.
 

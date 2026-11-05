@@ -294,6 +294,8 @@ CODEX_MCP_BRIDGE_ALLOW_DANGER_FULL_ACCESS=0
         if ($Filter) { return $script:cleanupProcesses | Where-Object { "ProcessId=$($_.ProcessId)" -eq $Filter } }
         return $script:cleanupProcesses
     }
+    function Test-CleanupPortListening { if ($script:portFails) { throw 'simulated listener query failure' }; return $script:portListening }
+    $script:portFails = $false; $script:portListening = $false
     $script:cimFails = $false
     $bridgeProcess = [pscustomobject]@{ ProcessId=123; Name='node.exe'; CommandLine='node reverse-runtime.mjs'; CreationDate=$started }
     $tunnelProcess = [pscustomobject]@{ ProcessId=456; Name='tunnel-client.exe'; CommandLine='tunnel-client.exe run'; CreationDate=$started }
@@ -375,7 +377,7 @@ CODEX_MCP_BRIDGE_ALLOW_DANGER_FULL_ACCESS=0
     $unsafe = Remove-ControllerLogs
     Check $unsafe.Deleted 0; Check $unsafe.Failed 1; Check (Test-Path -LiteralPath $outsideFile) $true
     $LogDir = $savedLogDir
-    Remove-Item -LiteralPath $junction -Force
+    [IO.Directory]::Delete($junction)
     Remove-Item -LiteralPath $hardLink -Force
     if ($hasSymbolic) { Remove-Item -LiteralPath $symbolic -Force }
     # One component alive, both exited, and reused/mismatched identities.
@@ -406,8 +408,27 @@ CODEX_MCP_BRIDGE_ALLOW_DANGER_FULL_ACCESS=0
         Check $blocked.Deleted 0; Check (Test-Path -LiteralPath $candidate) $true
         Check $(if (Test-Path -LiteralPath $pidPath) { Get-Content -LiteralPath $pidPath -Raw } else { 'absent' }) $stateBefore
     }
+    function Test-CleanupPortListening { if ($script:portFails) { throw "simulated listener query failure" }; return $script:portListening }
+    # After a normal stop, absent record plus successful process and listener
+    # checks permits cleanup. Ambiguous process/listener evidence does not.
+    Remove-Item -LiteralPath $pidPath -ErrorAction SilentlyContinue
+    $script:cimFails = $false; $script:cleanupProcesses = @(); $script:portListening = $false
+    $stopped = Remove-ControllerLogs
+    Check $stopped.Deleted 1; Check (Test-Path -LiteralPath $candidate) $false
+    foreach ($case in @('listener','listener-error','unknown-node','tunnel','cim-error')) {
+        $candidate = New-TestLog 'bridge-ambiguous-out.log'
+        $script:portListening = ($case -eq 'listener'); $script:portFails = ($case -eq 'listener-error')
+        $script:cimFails = ($case -eq 'cim-error'); $script:cleanupProcesses = @()
+        if ($case -eq 'unknown-node') { $script:cleanupProcesses = @([pscustomobject]@{ProcessId=999;Name='node.exe';CommandLine=$null}) }
+        if ($case -eq 'tunnel') { $script:cleanupProcesses = @($tunnelProcess) }
+        $blocked = Remove-ControllerLogs
+        Check $blocked.Deleted 0; Check (Test-Path -LiteralPath $candidate) $true
+        Remove-Item -LiteralPath $candidate
+    }
+    $script:portListening = $false; $script:portFails = $false
     $script:cimFails = $false; $script:cleanupProcesses = @()
     Write-Record $cleanupRecord
+    $candidate = New-TestLog 'bridge-kept-out.log'
     # Locked files report failure while other safe candidates are still removed.
     $locked = New-TestLog 'bridge-locked-out.log'
     $lockHandle = [IO.File]::Open($locked,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
@@ -443,14 +464,40 @@ CODEX_MCP_BRIDGE_ALLOW_DANGER_FULL_ACCESS=0
         if ($change -eq 'active') { Check $rechecked.Protected 1 }
         if ($change -eq 'disappear') { Check $rechecked.Failed 1 }
         Check (Test-Path -LiteralPath $outsideFile) $true
-        if (Test-Path -LiteralPath $locked) { Remove-Item -LiteralPath $locked -Force }
+        if (Test-Path -LiteralPath $locked) { if ((Get-Item -LiteralPath $locked -Force).PSIsContainer) { [IO.Directory]::Delete($locked) } else { Remove-Item -LiteralPath $locked -Force } }
         $locked = New-TestLog 'bridge-locked-out.log'
     }
     ${function:Get-CleanupProtection} = $realProtection
-    # Dispatch uses the same cleanup path. Dry run also protects stopped state.
-    $Action = 'cleanup-logs'; $DryRun = $true
+    # Dispatch confirmation, force and preview use only fixture files.
+    $Action = 'cleanup-logs'; $DryRun = $true; $Force = $false
+    function Confirm-LogCleanup { throw 'DryRun or Force must not prompt' }
     & $runAction
     Check (Test-Path -LiteralPath $locked) $true
+    $DryRun = $false
+    function Confirm-LogCleanup { return $false }
+    & $runAction
+    Check (Test-Path -LiteralPath $locked) $true
+    function Confirm-LogCleanup { return $true }
+    & $runAction
+    Check (Test-Path -LiteralPath $locked) $false
+    $locked = New-TestLog 'bridge-locked-out.log'
+    $Force = $true
+    function Confirm-LogCleanup { throw 'Force must not prompt' }
+    & $runAction
+    Check (Test-Path -LiteralPath $locked) $false
+    # Exercise exact input handling independently of the host's console state.
+    $confirmAst = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Confirm-LogCleanup' }, $true)
+    $confirmText = $confirmAst.Extent.Text.Replace("-not [Environment]::UserInteractive -or [Console]::IsInputRedirected", "`$script:interactiveUnavailable")
+    . ([scriptblock]::Create($confirmText))
+    function Read-Host { param($Prompt) return $script:answer }
+    $script:interactiveUnavailable = $false
+    foreach ($answer in @('y','Y','n','','yes',' y')) {
+        $script:answer = $answer
+        Check (Confirm-LogCleanup) ($answer -cin @('y','Y'))
+    }
+    $script:interactiveUnavailable = $true
+    function Read-Host { throw 'Redirected input must not be read' }
+    Check (Confirm-LogCleanup) $false
     Write-Host 'PASS: log cleanup retention, active protection, dry run, links, untrusted state, failures and revalidation (offline).'
 } finally {
     Set-Location $location
