@@ -43,9 +43,9 @@ if ($Action -eq '--Action') {
     if ($LogRetentionDays -lt 1 -or $LogRetentionDays -gt 3650) { throw 'LogRetentionDays must be an integer from 1 to 3650' }
 }
 if ($Help -or $Action -in @('help','/?')) {
-    Write-Output 'Usage: .\scripts\bridge-lab.ps1 start | status | stop'
-    Write-Output '       .\scripts\bridge-lab.ps1 cleanup-logs -DryRun'
-    Write-Output '       .\scripts\bridge-lab.ps1 help | -H | /?'
+    Write-Output 'Usage: .\scripts\bridge-lab.ps1 help | -H | /?'
+    Write-Output '       .\scripts\bridge-lab.ps1 start | status | stop'
+    Write-Output '       .\scripts\bridge-lab.ps1 cleanup-logs [-DryRun] [-Force] [-All]'
     Write-Output 'cleanup-logs: confirm with y to delete; -Force bypasses confirmation; -DryRun previews; -All selects all eligible logs.'
     return
 }
