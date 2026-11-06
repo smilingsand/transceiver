@@ -39,6 +39,43 @@ function errorCode(result, expected) {
   assert.equal("content" in result, false);
 }
 
+test("project name lookup ignores case while preserving configuration and rejecting unmatched names", async (t) => {
+  const f = await fixture(t);
+  const gitWrite = { push: true, pushTargets: [{ remote: "Origin", url: "https://example.test/Repo.git", branches: ["Main"] }] };
+  f.config.projects[f.root] = { name: "transceiver", sync: true, allowCodexTasks: true, gitWrite };
+  f.config.projects[f.outside] = { name: "other", sync: true, allowCodexTasks: true };
+  await f.save();
+  const policy = await createProjectPolicy({ configPath: f.configPath });
+  const tools = createProjectTools({ policy });
+  await fs.writeFile(path.join(f.root, "sample.txt"), "sample");
+  for (const name of ["Transceiver", "TRANSCEIVER", "transceiver"]) {
+    const project = await policy.authorizeProject(name);
+    assert.equal(project.name, "transceiver");
+    assert.equal(project.root, await fs.realpath(f.root));
+    assert.deepEqual(project.gitWrite, gitWrite);
+    const result = await tools.read_project_file({ project: name, path: "sample.txt" });
+    assert.equal(result.ok, true);
+    assert.equal(result.project, "transceiver");
+  }
+  assert.equal((await policy.authorizeProject("OTHER")).name, "other");
+  for (const name of [" transceiver", "transceiver ", "unknown"]) {
+    await assert.rejects(policy.authorizeProject(name), { code: "PROJECT_NOT_AUTHORIZED" });
+  }
+  // A case-only change to the configured name does not bypass baseline authorization.
+  f.config.projects[f.root].name = "Transceiver";
+  await f.save();
+  await assert.rejects(policy.authorizeProject("transceiver"), { code: "PROJECT_NOT_AUTHORIZED" });
+});
+
+test("project name lookup fails closed for case-insensitive duplicates", async (t) => {
+  const f = await fixture(t);
+  f.config.projects[f.outside] = { name: "DEMO", sync: true, allowCodexTasks: true };
+  await f.save();
+  await assert.rejects(loadAuthorizedProjects(f.configPath), { code: "INVALID_CONFIG" });
+  await assert.rejects(createProjectPolicy({ configPath: f.configPath }), { code: "INVALID_CONFIG" });
+  await assert.rejects(f.policy.authorizeProject("demo"), { code: "INVALID_CONFIG" });
+});
+
 test("reads UTF-8 BOM, Chinese/emoji paths and normalizes CRLF line ranges", async (t) => {
   const f = await fixture(t);
   await fs.mkdir(path.join(f.root, "中文 space"));

@@ -105,7 +105,7 @@ export async function loadAuthorizedProjects(configPath) {
     const { root, identity } = await inspectProjectRoot(configuredRoot);
     const name = project.name || path.basename(configuredRoot);
     if (!name || name.length > 200 || projects.some((other) =>
-      other.name === name || within(root, other.root) || within(other.root, root))) {
+      other.name.toLowerCase() === name.toLowerCase() || within(root, other.root) || within(other.root, root))) {
       throw new ProjectPolicyError("INVALID_CONFIG", "Enabled project names and roots must be unique and non-overlapping.");
     }
     projects.push(Object.freeze({ name, root, identity: Object.freeze(identity), gitWrite }));
@@ -124,8 +124,8 @@ export async function createProjectPolicy({ configPath = process.env.TRANSCEIVER
       if (typeof name !== "string" || !name || name.length > 200) {
         throw new ProjectPolicyError("INVALID_ARGUMENT", "project must be a non-empty project name of at most 200 characters.");
       }
-      const current = (await loadAuthorizedProjects(configPath)).find((project) => project.name === name);
-      const original = baseline.get(name);
+      const current = (await loadAuthorizedProjects(configPath)).find((project) => project.name.toLowerCase() === name.toLowerCase());
+      const original = current && baseline.get(current.name);
       if (!current || !original) {
         throw new ProjectPolicyError("PROJECT_NOT_AUTHORIZED", "Project is not authorized for deterministic access.");
       }
