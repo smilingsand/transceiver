@@ -4,6 +4,8 @@
 
 本参考帮助你准备 Windows 环境并理解配置条件。要连接一个**明确授权的本地项目**，请按 [快速开始](../QuickStart-BRIDGE-LAB-CN.md) 操作；仓库不会自动创建云端账号、Tunnel、项目授权或凭据。架构、安全边界与工具细节见 [Bridge Lab 手册](../README-BRIDGE-LAB-CN.md)。
 
+沙盒/Python 访问失败或 Git 超时时，参见[离线执行权限诊断与最小权限流程](Execution-Permissions-BRIDGE-LAB-CN.md)。
+
 ## 1. 准备环境
 
 准备 Windows PowerShell 5.1+、Node.js 22+、Git for Windows、可用的 Codex CLI/App Server、`tunnel-client` 和本 fork 的稳定 checkout。Codex 需要完成自身登录；Tunnel 需要可用的 Platform organization、正确的 ChatGPT 工作区关联，以及具有 Developer Mode 的 ChatGPT 账号。创建或编辑 Tunnel 需要 Tunnels Read + Manage；运行客户端和在 ChatGPT 选择 Tunnel 需要 Tunnels Read + Use。

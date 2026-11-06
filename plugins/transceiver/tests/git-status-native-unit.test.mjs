@@ -1,0 +1,63 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+import { createHash } from "node:crypto";
+import { deflateSync } from "node:zlib";
+import { createProjectPolicy } from "../scripts/project-policy.mjs";
+import { createGitTools } from "../scripts/deterministic/git-tools.mjs";
+
+const GIT = process.env.TRANSCEIVER_TEST_GIT || (process.platform === "win32"
+  ? "D:/Program Files/Git/mingw64/bin/git.exe" : "/usr/bin/git");
+
+test("status delegates worktree selection to Git while retaining control checks", async (t) => {
+  const dir = await fs.mkdtemp(path.join(import.meta.dirname, ".native-status-"));
+  t.after(() => fs.rm(dir, { recursive: true, force: true }));
+  const root = path.join(dir, "project");
+  const git = path.join(root, ".git");
+  await fs.mkdir(path.join(git, "objects"), { recursive: true });
+  await fs.mkdir(path.join(git, "refs", "heads"), { recursive: true });
+  await fs.writeFile(path.join(git, "HEAD"), "ref: refs/heads/main\n");
+  const config = path.join(git, "config");
+  await fs.writeFile(config, "[core]\n repositoryformatversion = 0\n bare = false\n");
+  await fs.writeFile(path.join(root, ".gitignore"), "ignored/\ntracked.txt\n");
+  await fs.writeFile(path.join(root, "visible.txt"), "visible\n");
+  await fs.writeFile(path.join(root, "tracked.txt"), "changed\n");
+  // Construct the fixture index and blob directly: no Git mutation commands.
+  const blob = Buffer.from("blob 9\0original\n");
+  const oid = createHash("sha1").update(blob).digest();
+  const hex = oid.toString("hex");
+  await fs.mkdir(path.join(git, "objects", hex.slice(0, 2)));
+  await fs.writeFile(path.join(git, "objects", hex.slice(0, 2), hex.slice(2)), deflateSync(blob));
+  const name = Buffer.from("tracked.txt");
+  const entry = Buffer.alloc(Math.ceil((62 + name.length + 1) / 8) * 8);
+  entry.writeUInt32BE(0o100644, 24);
+  entry.writeUInt32BE(9, 36);
+  oid.copy(entry, 40);
+  entry.writeUInt16BE(name.length, 60);
+  name.copy(entry, 62);
+  const header = Buffer.alloc(12);
+  header.write("DIRC"); header.writeUInt32BE(2, 4); header.writeUInt32BE(1, 8);
+  const index = Buffer.concat([header, entry]);
+  await fs.writeFile(path.join(git, "index"), Buffer.concat([index, createHash("sha1").update(index).digest()]));
+  const outside = path.join(dir, "outside");
+  await fs.mkdir(outside);
+  await fs.writeFile(path.join(outside, "secret.txt"), "secret\n");
+  await fs.symlink(outside, path.join(root, "ignored"), process.platform === "win32" ? "junction" : "dir");
+  const policyPath = path.join(dir, "policy.json");
+  await fs.writeFile(policyPath, JSON.stringify({ version: 1, projects: { [root]: { name: "demo", sync: true, allowCodexTasks: true } } }));
+  const tools = await createGitTools({ policy: await createProjectPolicy({ configPath: policyPath }), gitExecutable: GIT });
+  const status = await tools.git_status({ project: "demo" });
+  assert.equal(status.ok, true, JSON.stringify(status));
+  assert.ok(status.untracked.includes("visible.txt"), JSON.stringify(status));
+  assert.ok(status.unstaged.some((item) => item.path === "tracked.txt"), JSON.stringify(status));
+  assert.ok(!JSON.stringify(status).includes("secret.txt"));
+  const tracked = await tools.git_status({ project: "demo", scope: "tracked" });
+  assert.equal(tracked.ok, true, JSON.stringify(tracked));
+  assert.equal(tracked.complete, false);
+  assert.equal(tracked.untrackedIncluded, false);
+  assert.ok(tracked.unstaged.some((item) => item.path === "tracked.txt"), JSON.stringify(tracked));
+  await fs.writeFile(config, "[core]\n repositoryformatversion = 0\n bare = false\n fsmonitor = evil\n");
+  const rejected = await tools.git_status({ project: "demo" });
+  assert.equal(rejected.error.code, "UNSUPPORTED_REPOSITORY");
+});

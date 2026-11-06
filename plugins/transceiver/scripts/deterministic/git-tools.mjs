@@ -6,13 +6,15 @@ function failure(error) {
   const code = error instanceof ProjectPolicyError ? error.code : "GIT_ACCESS_FAILED";
   return { ok: false, complete: false, truncated: code === "OUTPUT_LIMIT", timedOut: code === "TIMEOUT",
     ...(error.mutationMayHaveOccurred ? { mutationMayHaveOccurred: true } : {}),
-    error: { code, message: error instanceof ProjectPolicyError ? error.message : "Git repository access failed." } };
+    error: { code, message: error instanceof ProjectPolicyError ? error.message : "Git repository access failed.",
+      ...(error.diagnostic ? { diagnostic: error.diagnostic } : {}) } };
 }
 
 function checkInput(input, diff) {
   if (!input || typeof input !== "object" || Array.isArray(input) ||
-      Object.keys(input).some((key) => !(diff ? ["project", "mode"] : ["project"]).includes(key)) ||
+      Object.keys(input).some((key) => !(diff ? ["project", "mode"] : ["project", "scope"]).includes(key)) ||
       typeof input.project !== "string" || !input.project || input.project.length > 200 ||
+      (!diff && input.scope !== undefined && !["full", "tracked"].includes(input.scope)) ||
       (diff && !["staged", "unstaged"].includes(input.mode))) {
     throw new ProjectPolicyError("INVALID_ARGUMENT", "Expected project only, or project and mode (staged/unstaged) for diff.");
   }
@@ -46,6 +48,10 @@ function parseStatus(bytes, branch) {
 
 export async function createGitTools(options) {
   const executor = await createGitExecutor(options);
+  return gitToolsFromExecutor(executor);
+}
+
+export function gitToolsFromExecutor(executor) {
   const write = (operation) => async (input) => {
     let completed = false;
     try {
@@ -71,9 +77,14 @@ export async function createGitTools(options) {
     async git_status(input) {
       try {
         checkInput(input, false);
-        const { project } = input;
-        const { stdout, branch } = await executor.execute(project, "status");
-        const result = { ...parseStatus(stdout, branch), project };
+        const { project, scope = "full" } = input;
+        const { stdout, branch } = await executor.execute(project, scope === "tracked" ? "tracked_status" : "status");
+        const parsed = parseStatus(stdout, branch);
+        if (scope === "tracked" && parsed.untracked.length) throw new ProjectPolicyError("INVALID_GIT_OUTPUT", "Unexpected untracked status in tracked-only diagnostic.");
+        const { clean, untracked, ...tracked } = parsed;
+        const result = scope === "tracked"
+          ? { ...tracked, complete: false, scope: "tracked", untrackedIncluded: false, trackedChangesReported: !clean, project }
+          : { ...parsed, project };
         if (jsonBytes(result) > executor.limits.maxResultBytes) {
           throw new ProjectPolicyError("OUTPUT_LIMIT", "Git status result exceeds its byte limit; no partial status is returned.");
         }

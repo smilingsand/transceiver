@@ -4,6 +4,8 @@
 
 从本 fork 的 `dev/bridge-lab` 分支开始，完成配置后，在 ChatGPT 发起真实只读 MCP 调用。命令在 Windows PowerShell 中运行；路径和项目名须替换。详细条件见 [Windows 配置参考](docs/Windows-Setup-BRIDGE-LAB-CN.md)，进程和日志行为见 [控制器参考](docs/Windows-Controller-BRIDGE-LAB-CN.md)。
 
+沙盒/Python 失败或 Git 超时时，参见[离线执行权限诊断](docs/Execution-Permissions-BRIDGE-LAB-CN.md)。
+
 ## 1. 获取本 fork 并选择分支
 
 当前仓库记录的 fork 地址如下；不要使用上游地址或默认的 master 分支。如果使用自己的镜像，替换 URL。下载 ZIP 时也要先在 fork 页面选择 `dev/bridge-lab` 再下载并解压。

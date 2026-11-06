@@ -5,8 +5,9 @@ import { ProjectPolicyError, sameIdentity } from "../project-policy.mjs";
 import { createGitEnvironment, fixedGitArguments, inspectGitCredentialManager, inspectGitExecutable, inspectGitRepository } from "./git-safety.mjs";
 import { authorizeWrite, validateWriteInput, WRITE_OPERATIONS } from "./git-write-policy.mjs";
 import { executeGitWrite } from "./git-write-operations.mjs";
+import { createScanCounters, gitDiagnostic, scanCountersSnapshot } from "./git-diagnostics.mjs";
 
-export const GIT_LIMITS = Object.freeze({ timeoutMs: 10_000, pushTimeoutMs: 120_000, maxOutputBytes: 1024 * 1024,
+export const GIT_LIMITS = Object.freeze({ timeoutMs: 60_000, pushTimeoutMs: 120_000, maxOutputBytes: 1024 * 1024,
   maxResultBytes: 64 * 1024, maxEntries: 20_000, maxConcurrent: 4 });
 let activeOperations = 0;
 const writingProjects = new Set();
@@ -14,6 +15,7 @@ const accessingProjects = new Map();
 
 const COMMANDS = Object.freeze({
   status: ["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=all", "--ignore-submodules=all", "--no-renames"],
+  tracked_status: ["status", "--porcelain=v1", "-z", "--branch", "--untracked-files=no", "--ignore-submodules=all", "--no-renames"],
   unstaged: ["diff", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--no-color", "--no-renames", "--unified=3", "--"],
   staged: ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--ignore-submodules=all", "--no-color", "--no-renames", "--unified=3", "--"],
 });
@@ -53,7 +55,11 @@ function runChild(executable, args, options, budget) {
     try { child = childProcess.spawn(executable, args, { ...options,
       ...(budget.processTree && process.platform !== "win32" ? { detached: true } : {}),
       shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] }); }
-    catch { reject(new ProjectPolicyError("GIT_START_FAILED", "Git process could not start.")); return; }
+    catch (cause) {
+      const failure = new ProjectPolicyError("GIT_START_FAILED", "Git process could not start.");
+      failure.diagnostic = gitDiagnostic(cause, "git");
+      reject(failure); return;
+    }
     const timer = setTimeout(() => fail("TIMEOUT", "Git operation exceeded its time budget."), budget.timeoutMs);
     const collect = (chunk, output) => {
       length += chunk.length;
@@ -63,7 +69,12 @@ function runChild(executable, args, options, budget) {
     };
     child.stdout.on("data", (chunk) => collect(chunk, true));
     child.stderr.on("data", (chunk) => collect(chunk, false));
-    child.on("error", () => { error ||= new ProjectPolicyError("GIT_START_FAILED", "Git process failed."); });
+    child.on("error", (cause) => {
+      if (!error) {
+        error = new ProjectPolicyError("GIT_START_FAILED", "Git process failed.");
+        error.diagnostic = gitDiagnostic(cause, "git");
+      }
+    });
     child.on("close", (code) => {
       clearTimeout(timer);
       if (error) reject(error);
@@ -125,11 +136,14 @@ export async function createGitExecutor({ policy, gitExecutable, limits: overrid
       let writingRoot;
       let accessRoot;
       let mutationAttempted = false;
+      let stage = "authorize";
+      let diagnosticRoot;
       const checkDeadline = () => {
         if (performance.now() >= deadline) throw new ProjectPolicyError("TIMEOUT", "Git operation exceeded its time budget.");
       };
       try {
         const project = await policy.authorizeProject(projectName);
+        diagnosticRoot = project.root;
         const target = write ? authorizeWrite(project, operation, input) : undefined;
         if (writingProjects.has(project.root) || (write && accessingProjects.has(project.root))) {
           throw new ProjectPolicyError("BUSY", "Another Git operation is in progress for this project.");
@@ -138,7 +152,21 @@ export async function createGitExecutor({ policy, gitExecutable, limits: overrid
         accessingProjects.set(accessRoot, (accessingProjects.get(accessRoot) || 0) + 1);
         if (write) { writingRoot = project.root; writingProjects.add(writingRoot); }
         checkDeadline();
-        const before = await inspectGitRepository(project, { checkDeadline, maxEntries: limits.maxEntries });
+        stage = "pre-scan";
+        const inspect = async (candidate) => {
+          const scanCounters = createScanCounters(stage);
+          const scanStarted = performance.now();
+          try { return await inspectGitRepository(candidate, { checkDeadline, maxEntries: limits.maxEntries, scanCounters,
+            controlOnly: operation === "status" || operation === "tracked_status" }); }
+          catch (error) {
+            const scan = ["TIMEOUT", "EPERM", "EACCES"].includes(error.code)
+              ? scanCountersSnapshot(scanCounters, performance.now() - scanStarted) : undefined;
+            if (scan) error.diagnostic = { ...gitDiagnostic(error, stage, diagnosticRoot), scan };
+            throw error;
+          }
+        };
+        const before = await inspect(project);
+        stage = "git";
         const currentExecutable = await inspectGitExecutable(trusted.executable);
         if (!sameIdentity(trusted.stat, currentExecutable.stat) || trusted.stat.size !== currentExecutable.stat.size ||
             trusted.stat.mtimeNs !== currentExecutable.stat.mtimeNs) throw new ProjectPolicyError("GIT_CHANGED", "Trusted Git executable changed.");
@@ -191,8 +219,10 @@ export async function createGitExecutor({ policy, gitExecutable, limits: overrid
           inspection: { checkDeadline, maxEntries: limits.maxEntries },
           markMutation: () => { mutationAttempted = true; } }) : undefined;
         const stdout = write ? undefined : await invoke(COMMANDS[operation]);
+        stage = "post-authorize";
         const current = await policy.authorizeProject(projectName);
-        const after = await inspectGitRepository(current, { checkDeadline, maxEntries: limits.maxEntries });
+        stage = "post-scan";
+        const after = await inspect(current);
         if (!sameIdentity(before.gitIdentity, after.gitIdentity) || before.config !== after.config ||
             (operation === "commit" ? before.branch.name !== after.branch.name || before.branch.detached !== after.branch.detached
               : JSON.stringify(before.branch) !== JSON.stringify(after.branch))) {
@@ -201,6 +231,7 @@ export async function createGitExecutor({ policy, gitExecutable, limits: overrid
         checkDeadline();
         return { stdout, branch: after.branch, result };
       } catch (error) {
+        if (error && typeof error === "object") error.diagnostic ||= gitDiagnostic(error, stage, diagnosticRoot);
         if (write && mutationAttempted) error.mutationMayHaveOccurred = true;
         throw error;
       } finally {

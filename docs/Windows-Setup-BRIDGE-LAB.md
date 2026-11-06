@@ -4,6 +4,8 @@
 
 Use the [six-step quick start](../QuickStart-BRIDGE-LAB.md) to connect an explicitly authorized local project. This reference explains the prerequisites; the repository does not create accounts, Tunnels, project authorization or credentials for you. See the [handbook](../README-BRIDGE-LAB.md) for architecture and security.
 
+For sandbox/Python access failures or Git timeouts, use the [offline execution-permissions diagnostic and least-privilege workflow](Execution-Permissions-BRIDGE-LAB.md).
+
 ## Prepare the environment
 
 You need Windows PowerShell 5.1+, Node.js 22+, Git for Windows, a signed-in Codex CLI with App Server, `tunnel-client`, and a stable checkout of this fork. Select the intended Platform organization and ChatGPT workspace and ensure Developer Mode is available. Creating or editing a Tunnel requires Tunnels Read + Manage; running the client and selecting it in ChatGPT requires Tunnels Read + Use.

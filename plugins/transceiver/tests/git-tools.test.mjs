@@ -120,6 +120,57 @@ test("clean repository returns branch and empty staged/unstaged/untracked lists"
   assert.equal((await f.diff("staged")).diff, "");
 });
 
+test("tracked diagnostic omits untracked completeness and preserves the full default", async (t) => {
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.root, "untracked.txt"), "untracked");
+  const tracked = await f.status({ scope: "tracked" });
+  assert.equal(tracked.ok, true, JSON.stringify(tracked));
+  assert.equal(tracked.complete, false);
+  assert.equal(tracked.trackedChangesReported, false);
+  assert.equal(tracked.untrackedIncluded, false);
+  assert.equal(tracked.scope, "tracked");
+  assert.equal("clean" in tracked, false);
+  assert.equal("untracked" in tracked, false);
+  const full = await f.status();
+  assert.equal(full.clean, false);
+  assert.deepEqual(full.untracked, ["untracked.txt"]);
+  await fs.writeFile(path.join(f.root, "base.txt"), "changed");
+  assert.equal((await f.status({ scope: "tracked" })).trackedChangesReported, true);
+});
+
+test("tracked status does not pre-scan worktree paths", async (t) => {
+  const f = await fixture(t);
+  const cache = path.join(f.root, "cache");
+  await fs.mkdir(cache);
+  const originalOpen = fs.opendir;
+  const originalLstat = fs.lstat;
+  const denied = () => Object.assign(new Error("secret absolute path"), { code: "EACCES" });
+  let blocked = cache;
+  const open = t.mock.method(fs, "opendir", (...args) => args[0] === blocked ? Promise.reject(denied()) : originalOpen(...args));
+  const stat = t.mock.method(fs, "lstat", (...args) => args[0] === blocked ? Promise.reject(denied()) : originalLstat(...args));
+  try {
+    for (const target of [cache, path.join(f.root, "base.txt")]) {
+      blocked = target;
+      const result = await f.status({ scope: "tracked" });
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(JSON.stringify(result).includes("secret absolute path"), false);
+    }
+  } finally { open.mock.restore(); stat.mock.restore(); }
+});
+
+test("tracked status accepts worktree links and nested repositories but rejects unsafe control configuration", async (t) => {
+  const f = await fixture(t);
+  const link = path.join(f.root, "escape");
+  await fs.symlink(f.outside, link, process.platform === "win32" ? "junction" : "dir");
+  assert.equal((await f.status({ scope: "tracked" })).ok, true);
+  await fs.unlink(link);
+  await fs.mkdir(path.join(f.root, "nested", ".git"), { recursive: true });
+  assert.equal((await f.status({ scope: "tracked" })).ok, true);
+  await fs.rm(path.join(f.root, "nested"), { recursive: true });
+  await fs.appendFile(path.join(f.root, ".git", "config"), "\n[include]\n path = secret\n");
+  errorCode(await f.status({ scope: "tracked" }), "UNSUPPORTED_REPOSITORY");
+});
+
 test("staged, unstaged and untracked names are machine parsed, including Chinese and shell characters", async (t) => {
   const f = await fixture(t);
   await fs.writeFile(path.join(f.root, "base.txt"), "staged version\n");
@@ -309,21 +360,21 @@ test("ordinary remote and branch config are accepted without contacting remotes"
   assert.equal(result.clean, true);
 });
 
-test("worktree links, hard links, nested repos and .gitmodules are rejected", async (t) => {
+test("diff rejects worktree links, hard links, nested repos and .gitmodules", async (t) => {
   const f = await fixture(t);
   const target = path.join(f.root, "escape");
   await fs.symlink(f.outside, target, process.platform === "win32" ? "junction" : "dir");
-  assert.equal((await f.status()).ok, false);
+  assert.equal((await f.diff()).ok, false);
   await fs.unlink(target);
   await fs.writeFile(path.join(f.outside, "data"), "sample");
   await fs.link(path.join(f.outside, "data"), target);
-  errorCode(await f.status(), "UNSUPPORTED_REPOSITORY");
+  errorCode(await f.diff(), "UNSUPPORTED_REPOSITORY");
   await fs.unlink(target);
   await fs.mkdir(path.join(f.root, "nested", ".git"), { recursive: true });
-  errorCode(await f.status(), "UNSUPPORTED_REPOSITORY");
+  errorCode(await f.diff(), "UNSUPPORTED_REPOSITORY");
   await fs.rmdir(path.join(f.root, "nested", ".git"));
   await fs.writeFile(path.join(f.root, ".gitmodules"), "fixture");
-  errorCode(await f.status(), "UNSUPPORTED_REPOSITORY");
+  errorCode(await f.diff(), "UNSUPPORTED_REPOSITORY");
 });
 
 test("submodule index entries are rejected even without .gitmodules", async (t) => {
@@ -331,6 +382,40 @@ test("submodule index entries are rejected even without .gitmodules", async (t) 
   const oid = (await fs.readFile(path.join(f.root, ".git", "refs", "heads", "main"), "utf8")).trim();
   await setupGit(f.root, [...fixedGitArguments(f.root), "update-index", "--add", "--cacheinfo", `160000,${oid},submodule`]);
   errorCode(await f.diff(), "UNSUPPORTED_REPOSITORY");
+});
+
+test("diff still fails closed on ignored junctions and nested metadata", async (t) => {
+  const f = await fixture(t);
+  await fs.writeFile(path.join(f.root, ".gitignore"), "ignored/\n");
+  const ignored = path.join(f.root, "ignored");
+  await fs.symlink(f.outside, ignored, process.platform === "win32" ? "junction" : "dir");
+  assert.equal((await f.diff()).ok, false);
+  await fs.unlink(ignored);
+  await fs.mkdir(path.join(ignored, "nested", ".git"), { recursive: true });
+  errorCode(await f.diff(), "UNSUPPORTED_REPOSITORY");
+});
+
+test("ignored-tree scan consumes its entry budget before starting Git", async (t) => {
+  const f = await fixture(t, { limits: { maxEntries: 30 } });
+  await fs.writeFile(path.join(f.root, ".gitignore"), "ignored/\n");
+  const ignored = path.join(f.root, "ignored");
+  await fs.mkdir(ignored);
+  await Promise.all(Array.from({ length: 40 }, (_, i) => fs.writeFile(path.join(ignored, `${i}.txt`), "fixture")));
+  const mock = t.mock.method(childProcess, "spawn", () => { throw new Error("Must reject before Git"); });
+  try {
+    errorCode(await f.diff(), "REPOSITORY_TOO_LARGE");
+    assert.equal(mock.mock.callCount(), 0);
+  } finally { mock.mock.restore(); }
+});
+
+test("caller working directory cannot rebind the authorized project or inject cwd", async (t) => {
+  const f = await fixture(t);
+  const previous = process.cwd();
+  try {
+    process.chdir(f.outside);
+    assert.equal((await f.status()).ok, true);
+    errorCode(await f.status({ cwd: f.outside }), "INVALID_ARGUMENT");
+  } finally { process.chdir(previous); }
 });
 
 test("Git environment injection and global helper config never reach the child", async (t) => {
@@ -433,7 +518,7 @@ test("entry scan and trusted executable/limits restrictions fail closed", async 
     const launcher = path.resolve(path.dirname(GIT), "../../cmd/git.exe");
     await assert.rejects(createGitTools({ policy: f.policy, gitExecutable: launcher }), TypeError);
   }
-  for (const limits of [{ maxConcurrent: 5 }, { maxOutputBytes: 0 }, { timeoutMs: 20_000 }, { pushTimeoutMs: 120_001 }, { shell: 1 }, { constructor: 1 }]) {
+  for (const limits of [{ maxConcurrent: 5 }, { maxOutputBytes: 0 }, { timeoutMs: 60_001 }, { pushTimeoutMs: 120_001 }, { shell: 1 }, { constructor: 1 }]) {
     await assert.rejects(createGitTools({ policy: f.policy, gitExecutable: GIT, limits }), TypeError);
   }
 });

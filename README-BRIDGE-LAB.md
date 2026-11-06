@@ -198,6 +198,8 @@ Activities organize verification and completion; Jobs track individual execution
 
 Codex Desktop may group externally created Threads under an added local project based on `cwd`. In historical testing, restarting Desktop was necessary before a new Thread appeared; real-time refresh is not guaranteed. Treat MCP status as authoritative. ChatGPT Projects, Desktop Projects, and Bridge project identifiers are not automatically equivalent.
 
+See [status scanning and security limits](docs/Execution-Permissions-BRIDGE-LAB.md#git-status-scanning-and-timeouts), including the optional tracked-only scope.
+
 ## Example workflow: from inspection to acceptance
 
 1. The user identifies a project and a read-only goal. Confirm the exact project name, `cwd`, sandbox, prohibited actions, and expected result.

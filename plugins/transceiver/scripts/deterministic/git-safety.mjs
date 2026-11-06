@@ -89,7 +89,7 @@ async function readMetadata(project, relative, maxBytes) {
   }
 }
 
-export async function inspectGitRepository(project, { checkDeadline, maxEntries }) {
+export async function inspectGitRepository(project, { checkDeadline, maxEntries, scanCounters, controlOnly = false }) {
   const root = await inspectProjectRoot(project.root);
   if (root.root !== project.root || !sameIdentity(root.identity, project.identity)) {
     throw new ProjectPolicyError("PROJECT_CHANGED", "Project root changed during Git access.");
@@ -101,26 +101,34 @@ export async function inspectGitRepository(project, { checkDeadline, maxEntries 
     throw error;
   }
   if (!gitStat.isDirectory() || gitStat.isSymbolicLink()) reject("Only a regular in-project .git directory is supported.");
+  if (path.relative(path.join(root.root, ".git"), await fs.realpath(path.join(root.root, ".git"))) !== "") {
+    reject("Linked Git control directory is not supported.");
+  }
 
-  // Inspect metadata AND worktree without following links. This also covers
-  // .gitignore/.gitattributes and nested repositories before Git can read them.
+  // Status lets Git decide which worktree paths to inspect. Control metadata
+  // still receives the existing no-links scan before and after execution.
   let entries = 0;
   const found = new Set();
-  const pending = [""];
+  const pending = [controlOnly ? ".git" : ""];
   while (pending.length) {
     checkDeadline();
     const relative = pending.pop();
     const absolute = path.join(root.root, relative);
+    if (scanCounters) scanCounters.opendir = Math.min(Number.MAX_SAFE_INTEGER, scanCounters.opendir + 1);
     const directory = await fs.opendir(absolute);
+    if (scanCounters) scanCounters.directoriesVisited = Math.min(Number.MAX_SAFE_INTEGER, scanCounters.directoriesVisited + 1);
     for await (const entry of directory) {
       checkDeadline();
+      if (scanCounters) scanCounters.entriesVisited = Math.min(Number.MAX_SAFE_INTEGER, scanCounters.entriesVisited + 1);
       if (++entries > maxEntries) throw new ProjectPolicyError("REPOSITORY_TOO_LARGE", "Repository scan exceeds its entry limit.");
       const child = path.join(relative, entry.name);
       const portable = child.split(path.sep).join("/");
       const lower = portable.toLowerCase();
       found.add(portable);
       const full = path.join(root.root, child);
+      if (scanCounters) scanCounters.lstat = Math.min(Number.MAX_SAFE_INTEGER, scanCounters.lstat + 1);
       const stat = await fs.lstat(full, { bigint: true });
+      if (scanCounters) scanCounters.realpath = Math.min(Number.MAX_SAFE_INTEGER, scanCounters.realpath + 1);
       const canonical = await fs.realpath(full);
       assertWithinProject(root.root, canonical);
       if (stat.isSymbolicLink() || path.relative(full, canonical) !== "" ||

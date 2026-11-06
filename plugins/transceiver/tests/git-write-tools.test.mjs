@@ -278,8 +278,8 @@ function fakeProcess(action) {
   if (action) queueMicrotask(() => action(child));
   return child;
 }
-test("push receives a separate 120-second total deadline; other Git operations remain 10 seconds", async (t) => {
-  assert.equal(GIT_LIMITS.timeoutMs, 10_000);
+test("push receives a separate 120-second total deadline; other Git operations use 60 seconds", async (t) => {
+  assert.equal(GIT_LIMITS.timeoutMs, 60_000);
   assert.equal(GIT_LIMITS.pushTimeoutMs, 120_000);
   const f = await fixture(t);
   const spawn = childProcess.spawn;
@@ -308,7 +308,7 @@ test("push receives a separate 120-second total deadline; other Git operations r
     success(await f.commit());
     assert.ok(budgets.push > 100_000 && budgets.push <= 120_000, JSON.stringify(budgets));
     for (const name of ["status", "diff", "add", "commit"]) {
-      assert.ok(budgets[name] > 0 && budgets[name] <= 10_000, JSON.stringify(budgets));
+      assert.ok(budgets[name] > 0 && budgets[name] <= 60_000, JSON.stringify(budgets));
     }
   } finally { timerMock.mock.restore(); spawnMock.mock.restore(); }
 });

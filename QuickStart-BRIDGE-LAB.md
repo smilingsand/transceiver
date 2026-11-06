@@ -4,6 +4,8 @@
 
 Start from this fork's `dev/bridge-lab` branch, complete the configuration, and then make a real read-only MCP call from ChatGPT. Run the commands in Windows PowerShell; replace paths and project names with your own. For detailed requirements, see the [Windows setup reference](docs/Windows-Setup-BRIDGE-LAB.md); for process and log behavior, see the [controller reference](docs/Windows-Controller-BRIDGE-LAB.md).
 
+For sandbox/Python failures or Git timeouts, follow the [offline execution-permissions diagnostic](docs/Execution-Permissions-BRIDGE-LAB.md).
+
 ## 1. Get the fork and select the branch
 
 The fork URL currently recorded for this repository is shown below. Do not use the upstream URL or the default `master` branch. If you are using your own mirror, replace the URL. When downloading a ZIP, first select `dev/bridge-lab` on the fork page before downloading and extracting it.

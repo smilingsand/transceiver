@@ -4,6 +4,8 @@
 
 The [Windows controller](../scripts/bridge-lab.ps1) starts, inspects and stops the reverse Bridge and Tunnel client processes that it manages locally. This document describes the behavior of the script in the repository. For first-time dependency preparation, project authorization and Tunnel profiles, see the [Windows setup guide](Windows-Setup-BRIDGE-LAB.md); for operational templates in an existing environment, see the [quick start](../QuickStart-BRIDGE-LAB.md).
 
+For read-only permission/Python diagnostics and the dedicated Git review workflow, see [execution permissions](Execution-Permissions-BRIDGE-LAB.md).
+
 ## Components and responsibilities
 
 ```text

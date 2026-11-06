@@ -38,8 +38,8 @@ export function registerDeterministicTools(server, services) {
   }, handler(services.fileTools, "read_project_file"));
   server.registerTool("git_status", {
     title: "Read Project Git Status",
-    description: "Read bounded branch, staged, unstaged and untracked status for an authorized project repository. No Codex task is created.",
-    inputSchema: z.strictObject({ project }), annotations,
+    description: "Read bounded Git status, including untracked files by default. Optional tracked scope omits untracked files and reports complete=false. No Codex task is created.",
+    inputSchema: z.strictObject({ project, scope: z.enum(["full", "tracked"]).optional() }), annotations,
   }, handler(services.gitTools, "git_status"));
   server.registerTool("git_diff", {
     title: "Read Project Git Diff",

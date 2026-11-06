@@ -4,6 +4,8 @@
 
 [Windows 控制器](../scripts/bridge-lab.ps1) 在本机启动、检查和停止受其管理的 reverse Bridge 与 Tunnel 客户端。本文描述仓库中脚本的行为；首次准备依赖、项目授权和 Tunnel profile 见 [Windows 配置指南](Windows-Setup-BRIDGE-LAB-CN.md)，已有环境的操作模板见 [快速开始](../QuickStart-BRIDGE-LAB-CN.md)。
 
+只读权限/Python 诊断及专用 Git 评审流程，参见[执行权限参考](Execution-Permissions-BRIDGE-LAB-CN.md)。
+
 ## 组成与职责
 
 ```text

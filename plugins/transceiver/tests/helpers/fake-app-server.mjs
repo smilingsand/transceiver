@@ -9,6 +9,13 @@ const input = createInterface({ input: process.stdin });
 input.on("line", (line) => {
   const message = JSON.parse(line);
   log({ event: "fake-rpc", method: message.method,
+    // Opt-in, bounded permission audit for offline transport tests; never log input text/config.
+    ...(process.env.T35A_CAPTURE_PERMISSIONS === "1" ? {
+      keys: Object.keys(message.params || {}).sort(),
+      ...(message.method === "thread/start" ? {
+        cwd: message.params.cwd, sandbox: message.params.sandbox, approvalPolicy: message.params.approvalPolicy,
+      } : {}),
+    } : {}),
     ...(message.method === "turn/start" ? {
       tagged: message.params.input[0].text.startsWith("|from_chatgpt|:"),
       projectTagged: message.params.input[0].text.includes("project: sample"),
