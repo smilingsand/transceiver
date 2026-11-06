@@ -8,6 +8,16 @@
 .transceiver/
 /media/
 
+
+# Local experiments and diagnostic artifacts
+/experiments/
+
+# Generated test fixtures and temporary directories
+/plugins/transceiver/tests/.t*/
+/plugins/transceiver/tests/.execution-permissions-*/
+/plugins/transceiver/tests/.native-status-*/
+
+
 # Local environment files (keep examples)
 .env
 .env.*
