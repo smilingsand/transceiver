@@ -415,7 +415,7 @@ namespace BridgeLab {
 function Remove-ControllerLogs {
     $counts = @{ Eligible=0; Deleted=0; Protected=0; Skipped=0; Failed=0; WouldDelete=0 }
     $cutoff = (Get-Date).AddDays(-$LogRetentionDays)
-    $namePattern = '^(bridge|tunnel)-.+-(out|err)\.log$'
+    $namePattern = '^(?:(?:bridge|tunnel)-.+-(?:out|err)\.log|bridge-.+-startup\.log|bridge-.+-out\.log\.startup\.log)$'
     try {
         Assert-CleanupPath $LogDir
         if (-not (Get-Item -LiteralPath $LogDir -Force).PSIsContainer) { throw 'LogDir is not a directory' }
@@ -552,7 +552,7 @@ switch ($Action) {
                 $selectedCodexExe = Join-Path $selectedCodexBin 'codex.exe'
                 $env:PATH = "$selectedCodexBin;$env:PATH"
                 $bridgeLogs = New-LogPaths 'bridge'
-                $startupLog = $bridgeLogs.Out + '.startup.log'
+                $startupLog = $bridgeLogs.Out -replace '-out\.log$', '-startup.log'
                 $startupWatch = [Diagnostics.Stopwatch]::StartNew()
                 Write-BridgeStartupDiagnostic $startupLog "Bridge startup: budgetSeconds=$BridgeStartupTimeoutSeconds; port=$Port"
                 $newBridge = Start-Process -FilePath $node -ArgumentList @('"' + $runtime + '"') -WorkingDirectory $pluginDir -PassThru -WindowStyle Hidden -RedirectStandardOutput $bridgeLogs.Out -RedirectStandardError $bridgeLogs.Err
